@@ -3,6 +3,7 @@
 
 CXX?=g++
 
+AR?=gcc-ar
 
 CXXFLAGS+=-march=native -O3 -I.
 
@@ -22,10 +23,10 @@ simdsampling.o: simdsampling.cpp
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp
 
 libsimdsampling-st.a: simdsampling-st.o
-	ar rcs $@ $<
+	$(AR) rcs $@ $<
 
 libsimdsampling.a: simdsampling.o
-	ar rcs $@ $<
+	$(AR) rcs $@ $<
 
 libsimdsampling.so: simdsampling.o
 	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef -fopenmp
