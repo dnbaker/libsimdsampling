@@ -5,7 +5,7 @@ CXX?=g++
 
 AR?=gcc-ar
 
-CXXFLAGS+=-march=native -O3 -I.
+CXXFLAGS+=-march=native -O3 -I. -std=c++17
 
 ifdef SLEEF_DIR
 CXXFLAGS+= -L$(SLEEF_DIR)/lib
