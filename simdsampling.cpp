@@ -9,7 +9,7 @@
 #elif __AVX__
 #define SIMD_SAMPLING_ALIGNMENT (sizeof(__m256) / sizeof(char))
 #elif __SSE2__
-#define SIMD_SAMPLING_ALIGNMENT (sizeof(__m256) / sizeof(char))
+#define SIMD_SAMPLING_ALIGNMENT (sizeof(__m128) / sizeof(char))
 #else
 #define SIMD_SAMPLING_ALIGNMENT 1
 #endif
