@@ -11,10 +11,8 @@
 
 using std::uint64_t;
 
-extern "C" {
 uint64_t double_simd_sampling(const double *weights, size_t n, uint64_t seed=0);
 uint64_t float_simd_sampling(const float *weights, size_t n, uint64_t seed=0);
-} // extern "C"
 
 template<typename FT>
 inline uint64_t simd_sampling(const FT *weights, size_t n, uint64_t seed=0) {
