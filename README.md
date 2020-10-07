@@ -17,3 +17,9 @@ blaze::DynamicVector<double> data(1000000);
 uint64_t selected_point = simd_sampling(data.data(), data.size()); // Manual selection of pointer
 uint64_t other_point = simd_sampling(data);                        // Using the container overload to access these functions automatically
 ```
+
+### Dependencies
+
+Requires [libsleef](https://github.com/shibatch/sleef).
+
+Add `INCLUDE_PATHS=` or `LINK_PATHS=` arguments to `sleef/build/{include/link}` to ensure the compiler can find the library.
