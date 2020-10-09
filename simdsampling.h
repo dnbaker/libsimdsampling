@@ -25,7 +25,7 @@ template<> inline uint64_t simd_sampling<float>(const float *weights, size_t n, 
     return float_simd_sampling(weights, n, seed);
 }
 
-template<typename Container, typename=std::enable_if_t<!std::is_pointer<Container>::value>>
+template<typename Container, typename=typename std::enable_if<!std::is_pointer<Container>::value>::type>
 static INLINE uint64_t simd_sampling(const Container &x, uint64_t seed=0) {
     return simd_sampling(x.data(), x.size(), seed);
 }

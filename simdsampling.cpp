@@ -4,7 +4,6 @@
 #include "simdsampling.h"
 #include "aesctr/wy.h"
 #include "sleef.h"
-#include "tsg.h"
 
 
 #ifdef __AVX512F__
@@ -18,9 +17,13 @@
 #endif
 
 // Ensure that we don't divide by 0
-template<typename T> constexpr T INC = 0;
-template<> constexpr double INC<double> = 4.9406564584124654e-324;
-template<> constexpr float INC<float> = 1.40129846E-45;
+template<typename T>
+struct INC {
+    static constexpr T value = 0;
+};
+template<> struct INC<float> {static constexpr float value = 1.40129846E-45;};
+template<> struct INC<double> {static constexpr double value = 4.9406564584124654e-324;};
+
 
 
 enum LoadFormat {
@@ -148,7 +151,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 
         const __m512d v3 = Sleef_logd8_u35(v2);
         // Log-transform the [0, 1] sampling
-        __m512d ov = _mm512_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm512_set1_pd(INC<double>));
+        __m512d ov = _mm512_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm512_set1_pd(INC<double>::value));
         auto divv = _mm512_div_pd(v3, ov);
         auto cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
@@ -185,7 +188,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
         auto v4 = _mm256_mul_pd(v3, _mm256_set1_pd(pdmul));
         auto v5 = Sleef_logd4_u35(v4);
-        __m256d ov = _mm256_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm256_set1_pd(INC<double>));
+        __m256d ov = _mm256_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm256_set1_pd(INC<double>::value));
         auto divv = _mm256_div_pd(v5, ov);
         auto cmp = _mm256_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm256_movemask_pd(cmp);
@@ -229,7 +232,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         auto v3 = _mm_sub_pd(_mm_castsi128_pd(v2), _mm_set1_pd(0x0010000000000000));
         auto v4 = _mm_mul_pd(v3, _mm_set1_pd(pdmul));
         auto v5 = Sleef_logd2_u35(v4);
-        __m128d ov6 = _mm_add_pd(load<aln>((const double *) &weights[o * nperel]), _mm_set1_pd(INC<double>));
+        __m128d ov6 = _mm_add_pd(load<aln>((const double *) &weights[o * nperel]), _mm_set1_pd(INC<double>::value));
         auto divv = _mm_div_pd(v5, ov6);
         auto cmp = _mm_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm_movemask_pd(cmp);
@@ -289,7 +292,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         auto v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         auto v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
-        auto ov6 = _mm512_add_ps(lv, _mm512_set1_ps(INC<float>));  
+        auto ov6 = _mm512_add_ps(lv, _mm512_set1_ps(INC<float>::value));  
         auto divv = _mm512_div_ps(v5, ov6);
         auto cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
@@ -324,7 +327,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         __m256i v = _mm256_set_epi64x(rng(), rng(), rng(), rng());
         auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
         auto v3 = Sleef_logf8_u35(v2);
-        __m256 ov6 = _mm256_add_ps(load<aln>((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>));
+        __m256 ov6 = _mm256_add_ps(load<aln>((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>::value));
         auto divv = _mm256_div_ps(v3, ov6);
         auto cmp = _mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm256_movemask_ps(cmp);
@@ -365,7 +368,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         __m128i v = _mm_set_epi64(rng(), rng());
         auto v3 = _mm_mul_ps(_mm_cvtepi32_ps(v), _mm_set1_ps(psmul));
         auto v5 = Sleef_logf4_u35(v3);
-        __m128 ov6 = _mm_max_ps(load<aln>((const float *) &weights[o * nperel]), _mm_set1_ps(INC<float>));
+        __m128 ov6 = _mm_max_ps(load<aln>((const float *) &weights[o * nperel]), _mm_set1_ps(INC<float>::value));
         auto divv = _mm_div_ps(v5, ov6);
         auto cmp = _mm_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm_movemask_ps(cmp);
