@@ -1,6 +1,5 @@
 #include "simdsampling.h"
-#include <random>
-#include "aesctr/wy.h"
+#include <cmath>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -19,17 +18,14 @@ int main(int argc, char **argv) {
 #endif
     uint64_t seed = 0;
     if(argc > 1) {
-        seed = std::strtoull(argv[1], nullptr, 10);
+        seed = std::atoi(argv[1]);
     }
     const int n = 100000;
     double *ptr = new double[n];
-    std::cauchy_distribution<double> cd;
-    wy::WyRand<uint64_t> rng(13);
     for(int i = 0; i < n; ++i) {
-        ptr[i] = std::abs(cd(rng));
+        ptr[i] = 1.;
     }
-    auto sel = reservoir_simd::sample(ptr, n, seed);
-    std::fprintf(stderr, "Selected: %u with weight %g\n", int(sel), ptr[sel]);
+    auto sel = reservoir_simd::sample_k(ptr, n, 5, seed);
+    for(const auto v: sel) std::fprintf(stderr, "%u\n", (int)v);
     delete[] ptr;
-    return EXIT_SUCCESS;
 }

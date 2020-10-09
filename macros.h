@@ -207,16 +207,4 @@
 #endif
 
 
-#ifndef NDEBUG
-#  include <iostream>
-#  define PRETTY_SAY std::cerr << '[' << __PRETTY_FUNCTION__ << ':' << __FILE__ << ':' << __LINE__ << ']'
-#else
-  struct CHEVRONEATER {
-      template<typename T>
-      const CHEVRONEATER &operator<<(const T &) const {return *this;}
-  };
-#  define PRETTY_SAY ::CHEVRONEATER{}
-
-#endif
-
 #endif /* SKETCH_MACROS_H__ */
