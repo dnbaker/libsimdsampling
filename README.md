@@ -6,7 +6,6 @@ This can make a significant improvement in speed of applications sampling from s
 
 Compile with `make`, and link against either `-lsimdsampling` or `-lsimdsampling-st`. libsimdsampling parallelizes using OpenMP, and libsimdsampling\_st performs serial sampling.
 
-
 ## Usage
 
 Example usage:
@@ -16,20 +15,43 @@ Example usage:
 #endif
 blaze::DynamicVector<double> data(1000000);
 // Initialize data with nonnegative weights
-uint64_t selected_point = simd_sampling(data.data(), data.size()); // Manual selection of pointer
-uint64_t other_point = simd_sampling(data);                        // Using the container overload to access these functions automatically
+uint64_t selected_point = reservoir_simd::sample(data.data(), data.size()); // Manual selection of pointer
+uint64_t other_point = reservoir_simd::sample(data);                        // Using the container overload to access these functions automatically
+
+// To sample k points randomly without replacement:
+const std::vector<uint64_t> selected = reservoir_simd::sample_k(data.data(), data.size(), k, /*seed=*/13);
 ```
 
-### Caveats
-libsimdsampling is currently implemented in C++17. Soon, we may rewrite the aligned/unaligned store selection to avoid using `if constexpr`.
+### Usage in C
 
-If the number of points is small (<10000), it may be slower than the naive approach.
+Simply include the same header and link as using C++; however, you will need to call unqualified names;
 
+```
+size_t n = 10000;
+int k = 25;
+uint64_t seed = 0;
+double *data = malloc(sizeof(double) * n);
+float *fdata = malloc(sizeof(float) * n);
+// Initialization here...
+uint64_t selected_point = dsimd_sample(data, n, seed);
+uint64_t float_selected_point = fsimd_sample(data, n, seed);
+```
 
-### Future work
+It's more complicated to sample k points without replacement; one must pre-allocate a buffer of 64-bit integers,
+and you will be responsible for freeing that memory.
 
-For kmeans++ with large k, it may be valuable to sample more than one point per iteration. We may add a generalized sampler
-using heaps soon.
+```
+uint64_t *retv = malloc(sizeof(uint64_t) * k);
+dsimd_sample_k(data, n, k, retv, seed);
+fsimd_sample_k(fdata, n, k, retv, seed); // Overwrites result from dsimd_sample_k
+free(retv);
+```
+
+## Sampling k points
+
+One can sample k points at a time via `simd_sample_k`.
+The same algorithm is used, except that a heap of the lowest-priority (highest value) elements are kept, rather than
+the lowest-priority element.
 
 ### Dependencies
 

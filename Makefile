@@ -2,10 +2,14 @@
 
 
 CXX?=g++
+CC?=gcc
 
 AR?=gcc-ar
 
-CXXFLAGS+=-march=native -O3 -I. -std=c++11
+WARNINGS=-Wall -Wextra -Wno-ignored-qualifiers
+EXTRA?=
+CFLAGS+=-march=native -O3 -I. $(WARNINGS) $(EXTRA)
+CXXFLAGS+=-march=native -O3 -I. -std=c++11 $(WARNINGS) $(EXTRA)
 
 ifdef SLEEF_DIR
 CXXFLAGS+= -L$(SLEEF_DIR)/lib
@@ -18,8 +22,9 @@ INCLUDE=$(patsubst %,-I%,$(INCLUDE_PATHS))
 LINK=$(patsubst %,-L%,$(LINK_PATHS))
 
 CXXFLAGS+=$(INCLUDE) $(LINK)
+CFLAGS+=$(INCLUDE) $(LINK)
 
-all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so test test-st
+all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so test test-st ctest ctest-st
 
 simdsampling.cpp: simdsampling.h
 
@@ -45,6 +50,18 @@ test: test.cpp libsimdsampling.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp
 
 test-st: test.cpp libsimdsampling-st.so
+	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-st $< -o $@
+
+ctest: ctest.c libsimdsampling.so
+	$(CC) $(CFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp
+
+ctest-st: ctest.c libsimdsampling-st.so
+	$(CC) $(CFLAGS) -L. -lsimdsampling-st $< -o $@
+
+ktest: ktest.cpp libsimdsampling.so
+	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp
+
+ktest-st: ktest.cpp libsimdsampling-st.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-st $< -o $@
 
 clean:
