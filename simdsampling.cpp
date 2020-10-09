@@ -1,3 +1,6 @@
+#ifdef _OPENMP
+#include "omp.h"
+#endif
 #include "simdsampling.h"
 #include "aesctr/wy.h"
 #include "sleef.h"
@@ -47,11 +50,78 @@ uint64_t float_simd_sampling(const float *weights, size_t n, uint64_t seed)
     }
 }
 
+#ifdef __AVX512F__
+INLINE __m512 load(const float *ptr, std::false_type) {
+    return _mm512_loadu_ps(ptr);
+}
+INLINE __m512d load(const double *ptr, std::false_type) {
+    return _mm512_loadu_pd(ptr);
+}
+INLINE __m512 load(const float *ptr, std::true_type) {
+    return _mm512_load_ps(ptr);
+}
+INLINE __m512d load(const double *ptr, std::true_type) {
+    return _mm512_load_pd(ptr);
+}
+template<LoadFormat aln>
+__m512d load(const double *ptr) {
+    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
+}
+#elif defined(__AVX__) || defined(__AVX2__)
+INLINE __m256 load(const float *ptr, std::false_type) {
+    return _mm256_loadu_ps(ptr);
+}
+INLINE __m256d load(const double *ptr, std::false_type) {
+    return _mm256_loadu_pd(ptr);
+}
+INLINE __m256 load(const float *ptr, std::true_type) {
+    return _mm256_load_ps(ptr);
+}
+INLINE __m256d load(const double *ptr, std::true_type) {
+    return _mm256_load_pd(ptr);
+}
+template<LoadFormat aln>
+__m256 load(const float *ptr) {
+    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
+}
+template<LoadFormat aln>
+__m256d load(const double *ptr) {
+    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
+}
+#elif defined(__SSE2__)
+INLINE __m128 load(const float *ptr, std::false_type) {
+    return _mm128_loadu_ps(ptr);
+}
+INLINE __m128d load(const double *ptr, std::false_type) {
+    return _mm128_loadu_pd(ptr);
+}
+INLINE __m128 load(const float *ptr, std::true_type) {
+    return _mm128_load_ps(ptr);
+}
+INLINE __m128d load(const double *ptr, std::true_type) {
+    return _mm128_load_pd(ptr);
+}
+template<LoadFormat aln>
+__m128d load(const double *ptr) {
+    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
+}
+#endif
+
 template<LoadFormat aln>
 uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed)
 {
     uint64_t bestind;
     wy::WyRand<uint64_t> baserng(seed * seed + 13);
+#ifdef _OPENMP
+    int nt;
+    #pragma omp parallel
+    {
+        nt = omp_get_num_threads();
+    }
+    std::vector<wy::WyRand<uint64_t>> rngs(nt);
+    for(auto &i: rngs) i.seed(baserng());
+#endif
+
 #ifdef __AVX512F__
     constexpr size_t nperel = sizeof(__m512d) / sizeof(double);
     const size_t e = n / nperel;
@@ -62,7 +132,8 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 
     OMP_PFOR
     for(o = 0; o < e; ++o) {
-        thread_local tsg::ThreadSeededGen<wy::WyRand<uint64_t>> rng(seed + baserng());
+        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
+                             baserng);
         __m512i v = _mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng());
         // Generate the vector
 
@@ -77,12 +148,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 
         const __m512d v3 = Sleef_logd8_u35(v2);
         // Log-transform the [0, 1] sampling
-        __m512d ov;
-        if constexpr(aln == ALIGNED) {
-            ov = _mm512_add_pd(_mm512_load_pd((const double *)&weights[o * nperel]), _mm512_set1_pd(INC<double>));
-        } else {
-            ov = _mm512_add_pd(_mm512_loadu_pd((const double *)&weights[o * nperel]), _mm512_set1_pd(INC<double>));
-        }
+        __m512d ov = _mm512_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm512_set1_pd(INC<double>));
         auto divv = _mm512_div_pd(v3, ov);
         auto cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
@@ -112,18 +178,14 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     size_t o = 0;
     OMP_PFOR
     for(o = 0; o < e; ++o) {
-        thread_local tsg::ThreadSeededGen<wy::WyRand<uint64_t>> rng(seed + baserng());
+        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
+                             baserng);
         __m256i v = _mm256_set_epi64x(rng(), rng(), rng(), rng());
         auto v2 = _mm256_or_si256(_mm256_srli_epi64(v, 12), _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)));
         auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
         auto v4 = _mm256_mul_pd(v3, _mm256_set1_pd(pdmul));
         auto v5 = Sleef_logd4_u35(v4);
-        __m256d ov;
-        if constexpr(aln == ALIGNED) {
-            ov = _mm256_add_pd(_mm256_load_pd((const double *)&weights[o * nperel]), _mm256_set1_pd(INC<double>));
-        } else {
-            ov = _mm256_add_pd(_mm256_loadu_pd((const double *)&weights[o * nperel]), _mm256_set1_pd(INC<double>));
-        }
+        __m256d ov = _mm256_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm256_set1_pd(INC<double>));
         auto divv = _mm256_div_pd(v5, ov);
         auto cmp = _mm256_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm256_movemask_pd(cmp);
@@ -160,18 +222,14 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     size_t o;
     OMP_PFOR
     for(o = 0; o < e; ++o) {
-        thread_local tsg::ThreadSeededGen<wy::WyRand<uint64_t>> rng(seed + baserng());
+        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
+                             baserng);
         __m128i v = _mm_set_epi64x(rng(), rng());
         auto v2 = _mm_or_si128(_mm_srli_epi64(v, 12), _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)));
         auto v3 = _mm_sub_pd(_mm_castsi128_pd(v2), _mm_set1_pd(0x0010000000000000));
         auto v4 = _mm_mul_pd(v3, _mm_set1_pd(pdmul));
         auto v5 = Sleef_logd2_u35(v4);
-        __m128d ov6;
-        if constexpr(aln == ALIGNED) {
-            ov6 = _mm_add_pd(_mm_load_pd((const double *) &weights[o * nperel]), _mm_set1_pd(INC<double>));
-        } else {
-            ov6 = _mm_add_pd(_mm_loadu_pd((const double *) &weights[o * nperel]), _mm_set1_pd(INC<double>));
-        }
+        __m128d ov6 = _mm_add_pd(load<aln>((const double *) &weights[o * nperel]), _mm_set1_pd(INC<double>));
         auto divv = _mm_div_pd(v5, ov6);
         auto cmp = _mm_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm_movemask_pd(cmp);
@@ -207,6 +265,15 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
 {
     uint64_t bestind;
     wy::WyRand<uint64_t> baserng(seed * seed + 13);
+#ifdef _OPENMP
+    int nt;
+    #pragma omp parallel
+    {
+        nt = omp_get_num_threads();
+    }
+    std::vector<wy::WyRand<uint64_t>> rngs(nt);
+    for(auto &i: rngs) i.seed(baserng());
+#endif
 #ifdef __AVX512F__
     constexpr size_t nperel = sizeof(__m512d) / sizeof(float);
     const size_t e = n / nperel;
@@ -216,16 +283,12 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     size_t o;
     OMP_PFOR
     for(o = 0; o < e; ++o) {
-        thread_local tsg::ThreadSeededGen<wy::WyRand<uint64_t>> rng(seed + baserng());
+        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
+                             baserng);
         __m512i v = _mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng());
         auto v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         auto v5 = Sleef_logf16_u35(v4);
-        __m512 lv;
-        if constexpr(aln == ALIGNED) {
-            lv = _mm512_load_ps((const float *)&weights[o * nperel]);
-        } else {
-            lv = _mm512_loadu_ps((const float *)&weights[o * nperel]);
-        }
+        __m512 lv = load<aln>((const float *)&weights[o * nperel]);
         auto ov6 = _mm512_add_ps(lv, _mm512_set1_ps(INC<float>));  
         auto divv = _mm512_div_ps(v5, ov6);
         auto cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ);
@@ -256,16 +319,12 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     size_t o = 0;
     OMP_PFOR
     for(o = 0; o < e; ++o) {
-        thread_local tsg::ThreadSeededGen<wy::WyRand<uint64_t>> rng(baserng() + seed);
+        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
+                             baserng);
         __m256i v = _mm256_set_epi64x(rng(), rng(), rng(), rng());
         auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
         auto v3 = Sleef_logf8_u35(v2);
-        __m256 ov6;
-        if constexpr(aln == ALIGNED) {
-            ov6 = _mm256_add_ps(_mm256_load_ps((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>));
-        } else {
-            ov6 = _mm256_add_ps(_mm256_loadu_ps((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>));
-        }
+        __m256 ov6 = _mm256_add_ps(load<aln>((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>));
         auto divv = _mm256_div_ps(v3, ov6);
         auto cmp = _mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm256_movemask_ps(cmp);
@@ -301,16 +360,12 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     size_t o;
     OMP_PFOR
     for(o = 0; o < e; ++o) {
-        thread_local tsg::ThreadSeededGen<wy::WyRand<uint64_t>> rng(baserng() + seed);
+        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
+                             baserng);
         __m128i v = _mm_set_epi64(rng(), rng());
         auto v3 = _mm_mul_ps(_mm_cvtepi32_ps(v), _mm_set1_ps(psmul));
         auto v5 = Sleef_logf4_u35(v3);
-        __m128 ov6;
-        if constexpr(aln == ALIGNED) {
-            ov6 = _mm_max_ps(_mm_load_ps((const float *) &weights[o * nperel]), _mm_set1_ps(INC<float>));
-        } else {
-            ov6 = _mm_max_ps(_mm_loadu_ps((const float *) &weights[o * nperel]), _mm_set1_ps(INC<float>));
-        }
+        __m128 ov6 = _mm_max_ps(load<aln>((const float *) &weights[o * nperel]), _mm_set1_ps(INC<float>));
         auto divv = _mm_div_ps(v5, ov6);
         auto cmp = _mm_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm_movemask_ps(cmp);
