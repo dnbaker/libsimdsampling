@@ -1,3 +1,6 @@
 [submodule "aesctr"]
 	path = aesctr
 	url = https://github.com/dnbaker/aesctr
+[submodule "simdpcg"]
+	path = simdpcg
+	url = https://github.com/lemire/simdpcg

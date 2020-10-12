@@ -8,12 +8,16 @@
 #include <limits>
 #include <queue>
 
+#if __AVX512F__ || __AVX2__
+#include "simdpcg32.h"
+#endif
+
 
 #ifdef __AVX512F__
 #define SIMD_SAMPLING_ALIGNMENT (sizeof(__m512) / sizeof(char))
 #elif __AVX2__
 #define SIMD_SAMPLING_ALIGNMENT (sizeof(__m256) / sizeof(char))
-#elif __SSE2__
+#elif __AVX__
 #define SIMD_SAMPLING_ALIGNMENT (sizeof(__m128) / sizeof(char))
 #else
 #define SIMD_SAMPLING_ALIGNMENT 1
@@ -153,6 +157,17 @@ __m128 load(const float *ptr) {
 }
 #endif
 
+#if __AVX512F__ && (!defined(__AVX512DQ__) || !__AVX512DQ__)
+INLINE __m512i pack_result(__m128i a, __m128i b, __m128i c, __m128i d) {
+    __m512i ret = _mm512_setzero_si512();
+    ret = _mm512_inserti32x4(ret, a, 0);
+    ret = _mm512_inserti32x4(ret, b, 1);
+    ret = _mm512_inserti32x4(ret, c, 2);
+    ret = _mm512_inserti32x4(ret, d, 3);
+    return ret;
+}
+#endif
+
 template<LoadFormat aln>
 uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed)
 {
@@ -164,11 +179,40 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     {
         nt = omp_get_num_threads();
     }
-    std::vector<wy::WyRand<uint64_t>> rngs(nt);
-    for(auto &i: rngs) i.seed(baserng());
 #endif
 
-#ifdef __AVX512F__
+
+#if __AVX512F__
+    #if __AVX512DQ__
+    using simdpcg_t = avx512bis_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.multiplier = _mm512_set1_epi64(0x5851f42d4c957f2d);
+        x.state[0] = _mm512_set_epi64(baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng());
+        x.state[1] = _mm512_set_epi64(baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng());
+        x.inc[0] = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
+        x.inc[1] = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
+    };
+    #else
+    using simdpcg_t = avx256_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.state = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
+        x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
+    };
+    #endif
+    simdpcg_t baserngstate;
+#ifdef _OPENMP
+    simdpcg_t *rngstates = nullptr;
+    if(nt > 1) {
+        if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
+            throw std::bad_alloc();
+        for(int i = 0; i < nt; ++i) init(rngstates[i]);
+    } else
+#endif
+    {
+        init(baserngstate);
+    }
     constexpr size_t nperel = sizeof(__m512d) / sizeof(double);
     const size_t e = n / nperel;
     constexpr double pdmul = 1. / (1ull<<52);
@@ -176,10 +220,14 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
-        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
-                             baserng);
-        __m512i v = _mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng());
-        // Generate the vector
+        auto &rng = OMP_ELSE(rngstates[omp_get_thread_num()],
+                             baserngstate);
+        __m512i v =
+#if __AVX512DQ__
+                    avx512bis_pcg32_random_r(&rng);
+#else
+                    pack_result(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng));
+#endif
 
         const __m512d v2 =
 #ifdef __AVX512DQ__
@@ -218,11 +266,30 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     const size_t e = (n / nperel);
     constexpr double pdmul = 1. / (1ull<<52);
     __m256d vmaxv = _mm256_set1_pd(-std::numeric_limits<double>::max());
+    using simdpcg_t = avx256_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.state = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
+        x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
+    };
+    simdpcg_t baserngstate;
+#ifdef _OPENMP
+    simdpcg_t *rngstates = nullptr;
+    if(nt > 1) {
+        if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
+            throw std::bad_alloc();
+        for(int i = 0; i < nt; ++i) init(rngstates[i]);
+    } else
+#endif
+    {
+        init(baserngstate);
+    }
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
-        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
-                             baserng);
-        __m256i v = _mm256_set_epi64x(rng(), rng(), rng(), rng());
+        auto &rng = OMP_ELSE(rngstates[omp_get_thread_num()],
+                             baserngstate);
+        __m256i v = _mm256_set_m128i(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng));
         auto v2 = _mm256_or_si256(_mm256_srli_epi64(v, 12), _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)));
         auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
         auto v4 = _mm256_mul_pd(v3, _mm256_set1_pd(pdmul));
@@ -309,6 +376,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         if(v > bestv) bestv = v, bestind = i;
     }
 #endif
+    OMP_ONLY(if(rngstates != &baserngstate) std::free(rngstates);)
     return bestind;
 }
 
@@ -329,6 +397,36 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
 #endif
     constexpr float psmul = 1. / (1ull<<32);
 #ifdef __AVX512F__
+    #if __AVX512DQ__
+    using simdpcg_t = avx512_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.multiplier = _mm512_set1_epi64(0x5851f42d4c957f2d);
+        x.state = _mm512_set_epi64(baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng());
+        x.inc = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
+    };
+    #else
+    using simdpcg_t = avx2_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.state[0] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.state[1] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc[0] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.inc[1] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
+        x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
+    };
+    #endif
+    simdpcg_t baserngstate;
+#ifdef _OPENMP
+    simdpcg_t *rngstates = nullptr;
+    if(nt > 1) {
+        if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
+            throw std::bad_alloc();
+        for(int i = 0; i < nt; ++i) init(rngstates[i]);
+    } else
+#endif
+    {
+        init(baserngstate);
+    }
     constexpr size_t nperel = sizeof(__m512) / sizeof(float);
     const size_t e = n / nperel;
     __m512 vmaxv = _mm512_set1_ps(-std::numeric_limits<float>::max());
@@ -365,11 +463,32 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     constexpr size_t nperel = sizeof(__m256) / sizeof(float);
     const size_t e = (n / nperel);
     __m256 vmaxv = _mm256_set1_ps(-std::numeric_limits<float>::max());
+    using simdpcg_t = avx2_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.state[0] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.state[1] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc[0] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.inc[1] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
+        x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
+    };
+    simdpcg_t baserngstate;
+#ifdef _OPENMP
+    simdpcg_t *rngstates;
+    if(nt > 1) {
+        if(posix_memalign((void **)&rngstates, sizeof(__m256) / sizeof(char), sizeof(*rngstates) * nt))
+            throw std::bad_alloc();
+        for(int i = 0; i < nt; ++i) init(rngstates[i]);
+    } else
+#endif
+    {
+        init(baserngstate);
+    }
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
-        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
-                             baserng);
-        __m256i v = _mm256_set_epi64x(rng(), rng(), rng(), rng());
+        auto &rng = OMP_ELSE(rngstates[omp_get_thread_num()],
+                             baserngstate);
+        __m256i v = avx2_pcg32_random_r(&rng);
         auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
         auto v3 = Sleef_logf8_u35(v2);
         __m256 ov6 = _mm256_add_ps(load<aln>((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>::value));
@@ -447,6 +566,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         }
     }
 #endif
+    OMP_ONLY(if(rngstates != &baserngstate) std::free(rngstates);)
     return bestind;
 }
 
@@ -455,8 +575,6 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
     using value_t = std::pair<FT, uint64_t>;
     using vec_t = std::vector<std::pair<FT, uint64_t>>;
     uint32_t k_;
-    vec_t &getc() {return this->c;}
-    const vec_t &getc() const {return this->c;}
     pq_t(int k): k_(k) {
         this->c.reserve(k);
     }

@@ -15,7 +15,7 @@ ifdef SLEEF_DIR
 CXXFLAGS+= -L$(SLEEF_DIR)/lib
 endif
 
-INCLUDE_PATHS+=
+INCLUDE_PATHS+=simdpcg/include
 LINK_PATHS+=
 
 INCLUDE=$(patsubst %,-I%,$(INCLUDE_PATHS))
