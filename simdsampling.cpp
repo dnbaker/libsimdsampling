@@ -203,7 +203,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     #endif
     simdpcg_t baserngstate;
 #ifdef _OPENMP
-    simdpcg_t *rngstates = nullptr;
+    simdpcg_t *rngstates = &baserngstate;
     if(nt > 1) {
         if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
             throw std::bad_alloc();
@@ -275,7 +275,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     };
     simdpcg_t baserngstate;
 #ifdef _OPENMP
-    simdpcg_t *rngstates = nullptr;
+    simdpcg_t *rngstates = &baserngstate;
     if(nt > 1) {
         if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
             throw std::bad_alloc();
@@ -417,7 +417,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     #endif
     simdpcg_t baserngstate;
 #ifdef _OPENMP
-    simdpcg_t *rngstates = nullptr;
+    simdpcg_t *rngstates = &baserngstate;
     if(nt > 1) {
         if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
             throw std::bad_alloc();
@@ -474,7 +474,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     };
     simdpcg_t baserngstate;
 #ifdef _OPENMP
-    simdpcg_t *rngstates;
+    simdpcg_t *rngstates = &baserngstate;
     if(nt > 1) {
         if(posix_memalign((void **)&rngstates, sizeof(__m256) / sizeof(char), sizeof(*rngstates) * nt))
             throw std::bad_alloc();
@@ -884,9 +884,7 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
     // We have to merge the priority queues
     // This could be parallelized, but let's assume k is small
     auto &lastpq = pqs[0];
-    std::fprintf(stderr, "last pq: %zu\n", lastpq.size());
     for(size_t i = 1; i < pqs.size(); ++i) {
-        std::fprintf(stderr, "next pq: %zu\n", pqs[i].size());
         auto &p = pqs[i];
         while(p.size()) {
             lastpq.push(p.top());
@@ -899,7 +897,6 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
         ret[i] = lastpq.top().second; lastpq.pop();
     }
 #else
-    std::fprintf(stderr, "Base pq: %zu\n", basepq.size());
     const size_t be = basepq.size();
     for(size_t i = 0; i < be; ++i) {
         ret[i] = basepq.top().second;
