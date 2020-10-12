@@ -916,3 +916,6 @@ int simd_sample_get_major_version() {
 int simd_sample_get_minor_version() {
     return LIB_SIMDSAMPLING_MINOR;
 }
+int simd_sample_get_revision_version() {
+    return LIB_SIMDSAMPLING_REVISION;
+}
