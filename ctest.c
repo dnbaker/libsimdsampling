@@ -20,5 +20,10 @@ int main() {
         n13 += (dsimd_sample(p, n, i + 10000) == 13);
     }
     fprintf(stderr, "Selected point 13 (with half of the weight) %u/%d (%g)\n", n13, ntimes, (double)n13 / ntimes);
+    float *fp = (float *)p;
+    const int fn = n * 2;
+    for(int i = 0; i < ntimes; ++i) {
+        n13 += (fsimd_sample(fp, fn, i) == 13);
+    }
     free(p);
 }
