@@ -34,23 +34,23 @@ run_tests: all
 
 simdsampling.cpp: simdsampling.h
 
-simdsampling-st.o: simdsampling.cpp $(SLEEFARG)
-	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@
+simdsampling-st.o: simdsampling.cpp libsleef-dyn
+	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -lsleef
 
-simdsampling.o: simdsampling.cpp $(SLEEFARG)
-	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp
+simdsampling.o: simdsampling.cpp libsleef-dyn
+	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp -lsleef
 
-libsimdsampling-st.a: simdsampling-st.o $(SLEEFARG)
+libsimdsampling-st.a: simdsampling-st.o
+	$(AR) rcs $@ $<
+
+libsimdsampling.a: simdsampling.o
 	$(AR) rcs $@ $< $(SLEEFARG)
 
-libsimdsampling.a: simdsampling.o $(SLEEFARG)
-	$(AR) rcs $@ $< $(SLEEFARG)
+libsimdsampling.so: simdsampling.o
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef -fopenmp -fPIC
 
-libsimdsampling.so: simdsampling.o $(SLEEFARG)
-	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef -fopenmp
-
-libsimdsampling-st.so: simdsampling-st.o $(SLEEFARG)
-	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef
+libsimdsampling-st.so: simdsampling-st.o
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef -fPIC -lsleef
 
 ftest: test.cpp libsimdsampling.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp -DFLOAT_TYPE=float
