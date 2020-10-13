@@ -2,6 +2,7 @@
 #include "omp.h"
 #endif
 #include "x86intrin.h"
+#include "ctz.h"
 #include "simdsampling.h"
 #include "aesctr/wy.h"
 #include "sleef.h"
@@ -249,7 +250,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
             OMP_CRITICAL
                 if(_mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ)) {
                     vmaxv = newmaxv;
-                    bestind = __builtin_ctz(cmpmask) + o * nperel;
+                    bestind = ctz(cmpmask) + o * nperel;
                 }
             }
         }
@@ -307,7 +308,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
                 OMP_CRITICAL
                 if(_mm256_movemask_pd(_mm256_cmp_pd(divv, vmaxv, _CMP_GT_OQ))) {
                     vmaxv = newmaxv;
-                    bestind = __builtin_ctz(cmpmask) + o * nperel;
+                    bestind = ctz(cmpmask) + o * nperel;
                 }
             }
         }
@@ -447,7 +448,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
                 OMP_CRITICAL
                 if(_mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ)) {
                     vmaxv = newmaxv;
-                    bestind = __builtin_ctz(cmpmask) + o * nperel;
+                    bestind = ctz(cmpmask) + o * nperel;
                 }
             }
         }
@@ -514,7 +515,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
             OMP_CRITICAL
             if(_mm256_movemask_ps(_mm256_cmp_ps(m2, vmaxv, _CMP_GT_OQ))) {
                 vmaxv = m2;
-                bestind = __builtin_ctz(cmpmask) + o * nperel;
+                bestind = ctz(cmpmask) + o * nperel;
             }
         }
     }
@@ -545,7 +546,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
             OMP_CRITICAL
             if((cmpmask = _mm_movemask_ps(_mm_cmp_ps(divv, vmaxv, _CMP_GT_OQ)))) {
                 vmaxv = broadcast_max(divv);
-                bestind = __builtin_ctz(_mm_movemask_ps(_mm_cmp_ps(vmaxv, divv, _CMP_EQ_OQ))) + o * nperel;
+                bestind = ctz(_mm_movemask_ps(_mm_cmp_ps(vmaxv, divv, _CMP_EQ_OQ))) + o * nperel;
             }
         }
     }
@@ -647,7 +648,7 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
         auto cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
             for(;;) {
-                auto ind = __builtin_ctz(cmpmask);
+                auto ind = ctz(cmpmask);
                 pq.add(((double *)&divv)[ind], ind + o * nperel);
                 cmpmask ^= (1 << ind);
                 if(cmpmask == 0) {
@@ -685,7 +686,7 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
         auto cmpmask = _mm256_movemask_pd(cmp);
         if(cmpmask) {
             for(;;) {
-                auto ind = __builtin_ctz(cmpmask);
+                auto ind = ctz(cmpmask);
                 pq.add(((double *)&divv)[ind], ind + o * nperel);
                 cmpmask ^= (1 << ind);
                 if(!cmpmask) {
@@ -823,7 +824,7 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
         auto cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
             for(;;) {
-                auto ind = __builtin_ctz(cmpmask);
+                auto ind = ctz(cmpmask);
                 pq.add(((float *)&divv)[ind], ind + o * nperel);
                 cmpmask ^= (1 << ind);
                 if(cmpmask == 0) {
@@ -860,7 +861,7 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
         auto cmpmask = _mm256_movemask_ps(cmp);
         if(cmpmask) {
             for(;;) {
-                auto ind = __builtin_ctz(cmpmask);
+                auto ind = ctz(cmpmask);
                 pq.add(((float *)&divv)[ind], ind + o * nperel);
                 cmpmask ^= (1 << ind);
                 if(!cmpmask) {
