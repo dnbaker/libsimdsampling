@@ -17,7 +17,7 @@ CXXFLAGS+= -L$(SLEEF_DIR)/lib
 endif
 
 INCLUDE_PATHS+=sleef/build/include
-LINK_PATHS+=
+LINK_PATHS+=sleef/build/lib
 
 INCLUDE=$(patsubst %,-I%,$(INCLUDE_PATHS))
 LINK=$(patsubst %,-L%,$(LINK_PATHS))
@@ -47,10 +47,10 @@ libsimdsampling.a: simdsampling.o $(SLEEFARG)
 	$(AR) rcs $@ $< $(SLEEFARG)
 
 libsimdsampling.so: simdsampling.o $(SLEEFARG)
-	$(CXX) $(CXXFLAGS) -shared -o $@ $< $(SLEEFARG) -fopenmp
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef -fopenmp
 
 libsimdsampling-st.so: simdsampling-st.o $(SLEEFARG)
-	$(CXX) $(CXXFLAGS) -shared -o $@ $< $(SLEEFARG)
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef
 
 ftest: test.cpp libsimdsampling.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp -DFLOAT_TYPE=float
@@ -80,6 +80,7 @@ sleef:
 	ls sleef || git clone https://github.com/shibatch/sleef
 
 libsleef.a: sleef
-	ls libsleef.a || (cd sleef && mkdir -p build && cd build && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) && cp lib/libsleef.a lib/libsleefdft.a ../.. && cd ..)
+	(ls libsleef.a || (cd sleef && (mkdir build && cd build || cd build && make clean) && cd build && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) && cp lib/libsleef.a lib/libsleefdft.a ../.. && cd ..)) && \
+    ((ls sleef/build/lib/libsleef*so && ls sleef/build/lib/libsleef*dylib) || (cd sleef && mkdir -p build && cd build && make clean && $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && cp lib/libsleef*dylib lib/libsleef*so ../.. && cd ..))
 clean:
 	rm -f libsimdsampling.a simdsampling.o libsimdsampling.so libsimdsampling-st.so test test-st simdsampling-st.o
