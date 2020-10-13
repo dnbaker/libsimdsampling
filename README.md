@@ -55,6 +55,6 @@ the lowest-priority element.
 
 ### Dependencies
 
-Requires [libsleef](https://github.com/shibatch/sleef).
+Requires [libsleef](https://github.com/shibatch/sleef), which can be installed easily with homebrew or apt-get on Ubuntu, or can be built from source.
 
-Add `INCLUDE_PATHS=` or `LINK_PATHS=` arguments to `sleef/build/{include/lib}` to ensure the compiler can find the library.
+Add `INCLUDE_PATHS=` or `LINK_PATHS=` arguments to `sleef/build/{include/lib}` to ensure the compiler can find the library if necessary.
