@@ -15,7 +15,7 @@ ifdef SLEEF_DIR
 CXXFLAGS+= -L$(SLEEF_DIR)/lib
 endif
 
-INCLUDE_PATHS+=thirdparty
+INCLUDE_PATHS+=
 LINK_PATHS+=
 
 INCLUDE=$(patsubst %,-I%,$(INCLUDE_PATHS))
@@ -25,6 +25,9 @@ CXXFLAGS+=$(INCLUDE) $(LINK)
 CFLAGS+=$(INCLUDE) $(LINK)
 
 all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so test test-st ctest ctest-st ftest ftest-st
+
+run_tests: all
+	./test && ./test-st && ./ctest && ./ctest-st && ./ftest && ./ftest-st
 
 simdsampling.cpp: simdsampling.h
 
