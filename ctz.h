@@ -43,7 +43,7 @@ template<> INLINE unsigned ctz<uint32_t>(uint32_t x) {
 }
 
 template<> INLINE unsigned ctz<uint16_t>(uint16_t x) {
-    return ctz(static_cast<unsigned>(x))
+    return ctz(static_cast<unsigned>(x));
 }
 template<> INLINE unsigned ctz<int16_t>(int16_t x) {
     return ctz(static_cast<uint16_t>(x));
