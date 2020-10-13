@@ -16,8 +16,8 @@ ifdef SLEEF_DIR
 CXXFLAGS+= -L$(SLEEF_DIR)/lib
 endif
 
-INCLUDE_PATHS+=sleef/build/include
-LINK_PATHS+=sleef/build/lib
+INCLUDE_PATHS+=sleef/build/include sleef/dynbuild/include
+LINK_PATHS+=sleef/build/lib sleef/dynbuild/lib
 
 INCLUDE=$(patsubst %,-I%,$(INCLUDE_PATHS))
 LINK=$(patsubst %,-L%,$(LINK_PATHS))
