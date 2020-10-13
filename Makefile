@@ -16,7 +16,7 @@ ifdef SLEEF_DIR
 CXXFLAGS+= -L$(SLEEF_DIR)/lib
 endif
 
-INCLUDE_PATHS+=
+INCLUDE_PATHS+=sleef/build/include
 LINK_PATHS+=
 
 INCLUDE=$(patsubst %,-I%,$(INCLUDE_PATHS))
@@ -40,16 +40,16 @@ simdsampling-st.o: simdsampling.cpp
 simdsampling.o: simdsampling.cpp
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp
 
-libsimdsampling-st.a: simdsampling-st.o
+libsimdsampling-st.a: simdsampling-st.o $(SLEEFARG)
 	$(AR) rcs $@ $< $(SLEEFARG)
 
-libsimdsampling.a: simdsampling.o
+libsimdsampling.a: simdsampling.o $(SLEEFARG)
 	$(AR) rcs $@ $< $(SLEEFARG)
 
-libsimdsampling.so: simdsampling.o
+libsimdsampling.so: simdsampling.o $(SLEEFARG)
 	$(CXX) $(CXXFLAGS) -shared -o $@ $< $(SLEEFARG) -fopenmp
 
-libsimdsampling-st.so: simdsampling-st.o
+libsimdsampling-st.so: simdsampling-st.o $(SLEEFARG)
 	$(CXX) $(CXXFLAGS) -shared -o $@ $< $(SLEEFARG)
 
 ftest: test.cpp libsimdsampling.so
