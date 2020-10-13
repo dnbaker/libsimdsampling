@@ -79,12 +79,15 @@ ktest-st: ktest.cpp libsimdsampling-st.so
 sleef:
 	ls sleef 2>/dev/null || git clone https://github.com/shibatch/sleef
 
+sleef/dynbuild: sleef
+	ls sleef/dynbuild 2>/dev/null || mkdir sleef/dynbuild
 sleef/build: sleef
 	ls sleef/build 2>/dev/null || mkdir sleef/build
 
 libsleef.a: sleef/build
 	ls libsleef.a 2>/dev/null || (cd $< && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) &&  cp lib/libsleef.a lib/libsleefdft.a ../..)
-libsleef-dyn:
-	ls libsleef*so 2>/dev/null || ls libsleef*dylib 2>/dev/null || (cd sleef; (ls dynbuild2>/dev/null || mkdir dynbuild);cd dynbuild;make clean || echo "cleaned failed but no sweat"; $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && (cp lib/libsleef*dylib ../.. 2>/dev/null || cp lib/libsleef*so ../.. 2>/dev/null))
+
+libsleef-dyn: sleef/dynbuild
+	ls libsleef*so 2>/dev/null || ls libsleef*dylib 2>/dev/null || (cd sleef/dynbuild && echo "about to cmake " &&  $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && (cp lib/libsleef*dylib ../.. 2>/dev/null || cp lib/libsleef*so ../.. 2>/dev/null))
 clean:
 	rm -f libsimdsampling.a simdsampling.o libsimdsampling.so libsimdsampling-st.so test test-st simdsampling-st.o
