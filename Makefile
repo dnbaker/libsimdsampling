@@ -80,7 +80,7 @@ sleef:
 	ls sleef || git clone https://github.com/shibatch/sleef
 
 libsleef.a: sleef
-	(ls libsleef.a || (cd sleef && (mkdir build && cd build || cd build && make clean) && cd build && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) && cp lib/libsleef.a lib/libsleefdft.a ../.. && cd ..)) && \
+	(ls libsleef.a || (cd sleef && ((mkdir build && cd build) || (cd build && make clean)) && cd build && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) && cp lib/libsleef.a lib/libsleefdft.a ../.. && cd ..)) && \
     ((ls sleef/build/lib/libsleef*so && ls sleef/build/lib/libsleef*dylib) || (cd sleef && mkdir -p build && cd build && make clean && $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && cp lib/libsleef*dylib lib/libsleef*so ../.. && cd ..))
 clean:
 	rm -f libsimdsampling.a simdsampling.o libsimdsampling.so libsimdsampling-st.so test test-st simdsampling-st.o
