@@ -77,10 +77,14 @@ ktest-st: ktest.cpp libsimdsampling-st.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-st $< -o $@
 
 sleef:
-	ls sleef || git clone https://github.com/shibatch/sleef
+	ls sleef 2>/dev/null || git clone https://github.com/shibatch/sleef
 
-libsleef.a: sleef
-	(ls libsleef.a || (cd sleef && ((mkdir build && cd build) || (cd build && make clean)) && cd build && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) && cp lib/libsleef.a lib/libsleefdft.a ../.. && cd ..)) && \
-    ((ls sleef/build/lib/libsleef*so && ls sleef/build/lib/libsleef*dylib) || (cd sleef && mkdir -p build && cd build && make clean && $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && (cp lib/libsleef*dylib .. || cp lib/libsleef*so ..) && cd ..))
+sleef/build: sleef
+	ls sleef/build 2>/dev/null || mkdir sleef/build
+
+libsleef.a: sleef/build
+	ls libsleef.a 2>/dev/null || (cd $< && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) &&  cp lib/libsleef.a lib/libsleefdft.a ../..)
+libsleef-dyn:
+	ls libsleef*so 2>/dev/null || ls libsleef*dylib 2>/dev/null || (cd sleef; (ls dynbuild2>/dev/null || mkdir dynbuild);cd dynbuild;make clean || echo "cleaned failed but no sweat"; $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && (cp lib/libsleef*dylib ../.. 2>/dev/null || cp lib/libsleef*so ../.. 2>/dev/null))
 clean:
 	rm -f libsimdsampling.a simdsampling.o libsimdsampling.so libsimdsampling-st.so test test-st simdsampling-st.o
