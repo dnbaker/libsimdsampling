@@ -34,10 +34,10 @@ run_tests: all
 
 simdsampling.cpp: simdsampling.h
 
-simdsampling-st.o: simdsampling.cpp
+simdsampling-st.o: simdsampling.cpp $(SLEEFARG)
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@
 
-simdsampling.o: simdsampling.cpp
+simdsampling.o: simdsampling.cpp $(SLEEFARG)
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp
 
 libsimdsampling-st.a: simdsampling-st.o $(SLEEFARG)
