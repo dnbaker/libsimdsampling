@@ -27,10 +27,10 @@ CFLAGS+=$(INCLUDE) $(LINK)
 
 SLEEFARG=libsleef.a
 
-all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so test test-st ctest ctest-st ftest ftest-st
+all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so test test-st ctest ctest-st ftest ftest-st ktest ktest-st
 
 run_tests: all
-	./test && ./test-st && ./ctest && ./ctest-st && ./ftest && ./ftest-st
+	./test && ./test-st && ./ctest && ./ctest-st && ./ftest && ./ftest-st && ./ktest && ./ktest-st
 
 simdsampling.cpp: simdsampling.h
 
