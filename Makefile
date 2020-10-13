@@ -5,6 +5,7 @@ CXX?=g++
 CC?=gcc
 
 AR?=gcc-ar
+CMAKE?=cmake
 
 WARNINGS=-Wall -Wextra -Wno-ignored-qualifiers
 EXTRA?=
@@ -24,6 +25,8 @@ LINK=$(patsubst %,-L%,$(LINK_PATHS))
 CXXFLAGS+=$(INCLUDE) $(LINK)
 CFLAGS+=$(INCLUDE) $(LINK)
 
+SLEEFARG=libsleef.a
+
 all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so test test-st ctest ctest-st ftest ftest-st
 
 run_tests: all
@@ -38,16 +41,16 @@ simdsampling.o: simdsampling.cpp
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp
 
 libsimdsampling-st.a: simdsampling-st.o
-	$(AR) rcs $@ $<
+	$(AR) rcs $@ $< $(SLEEFARG)
 
 libsimdsampling.a: simdsampling.o
-	$(AR) rcs $@ $<
+	$(AR) rcs $@ $< $(SLEEFARG)
 
 libsimdsampling.so: simdsampling.o
-	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef -fopenmp
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< $(SLEEFARG) -fopenmp
 
 libsimdsampling-st.so: simdsampling-st.o
-	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< $(SLEEFARG)
 
 ftest: test.cpp libsimdsampling.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp -DFLOAT_TYPE=float
@@ -73,5 +76,10 @@ ktest: ktest.cpp libsimdsampling.so
 ktest-st: ktest.cpp libsimdsampling-st.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-st $< -o $@
 
+sleef:
+	ls sleef || git clone https://github.com/shibatch/sleef
+
+libsleef.a: sleef
+	ls libsleef.a || (cd sleef && mkdir -p build && cd build && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) && cp lib/libsleef.a lib/libsleefdft.a ../.. && cd ..)
 clean:
 	rm -f libsimdsampling.a simdsampling.o libsimdsampling.so libsimdsampling-st.so test test-st simdsampling-st.o
