@@ -395,7 +395,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     std::vector<wy::WyRand<uint64_t>> rngs(nt);
     for(auto &i: rngs) i.seed(baserng());
 #endif
-    constexpr float psmul = 1. / (1ull<<32);
+    constexpr float psmul = 1. / (1ull<<29);
 #ifdef __AVX512F__
     #if __AVX512DQ__
     using simdpcg_t = avx512_pcg32_random_t;
@@ -434,7 +434,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     for(size_t o = 0; o < e; ++o) {
         auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
                              baserng);
-        __m512i v = _mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng());
+        __m512i v = _mm512_srli_epi32(_mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng()), 3);
         auto v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         auto v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
@@ -488,8 +488,16 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     for(size_t o = 0; o < e; ++o) {
         auto &rng = OMP_ELSE(rngstates[omp_get_thread_num()],
                              baserngstate);
-        __m256i v = avx2_pcg32_random_r(&rng);
+        __m256i v = _mm256_srli_epi32(avx2_pcg32_random_r(&rng), 3);
         auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
+#ifndef NDEBUG
+        float sum = 0.;
+        for(size_t i = 0; i < sizeof(v) / sizeof(uint32_t); ++i) {
+            float nextv;
+            std::memcpy(&nextv, (float *)&v2 + i, sizeof(nextv));
+            sum += nextv;
+        }
+#endif
         auto v3 = Sleef_logf8_u35(v2);
         __m256 ov6 = _mm256_add_ps(load<aln>((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>::value));
         auto divv = _mm256_div_ps(v3, ov6);
@@ -792,7 +800,7 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
     pq_t<float> basepq(k);
 #endif
 
-    constexpr float psmul = 1. / (1ull<<32);
+    constexpr float psmul = 1. / (1ull<<29);
 #ifdef __AVX512F__
     constexpr size_t nperel = sizeof(__m512) / sizeof(float);
     const size_t e = n / nperel;
@@ -806,7 +814,7 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
                              baserng);
         auto &pq = OMP_ELSE(pqs[tid],
                             basepq);
-        __m512i v = _mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng());
+        __m512i v = _mm512_srli_epi32(_mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng()), 3);
         auto v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         auto v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
@@ -843,7 +851,7 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
                              baserng);
         pq_t<float> &pq = OMP_ELSE(pqs[tid],
                                     basepq);
-        __m256i v = _mm256_set_epi64x(rng(), rng(), rng(), rng());
+        __m256i v = _mm256_srli_epi32(_mm256_set_epi64x(rng(), rng(), rng(), rng()), 3);
         auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
         auto v3 = Sleef_logf8_u35(v2);
         __m256 ov6 = _mm256_add_ps(load<aln>((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>::value));

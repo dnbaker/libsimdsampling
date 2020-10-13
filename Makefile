@@ -24,7 +24,7 @@ LINK=$(patsubst %,-L%,$(LINK_PATHS))
 CXXFLAGS+=$(INCLUDE) $(LINK)
 CFLAGS+=$(INCLUDE) $(LINK)
 
-all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so test test-st ctest ctest-st
+all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so test test-st ctest ctest-st ftest ftest-st
 
 simdsampling.cpp: simdsampling.h
 
@@ -45,6 +45,12 @@ libsimdsampling.so: simdsampling.o
 
 libsimdsampling-st.so: simdsampling-st.o
 	$(CXX) $(CXXFLAGS) -shared -o $@ $< -lsleef
+
+ftest: test.cpp libsimdsampling.so
+	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp -DFLOAT_TYPE=float
+
+ftest-st: test.cpp libsimdsampling-st.so
+	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-st $< -o $@ -DFLOAT_TYPE=float
 
 test: test.cpp libsimdsampling.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp

@@ -6,6 +6,11 @@
 #endif
 
 //using simdsample::simd_sampling;
+
+#ifndef FLOAT_TYPE
+#define FLOAT_TYPE double
+#endif
+
 int main(int argc, char **argv) {
 #ifdef _OPENMP
     int nt = 1;
@@ -22,8 +27,8 @@ int main(int argc, char **argv) {
         seed = std::strtoull(argv[1], nullptr, 10);
     }
     const int n = 100000;
-    double *ptr = new double[n];
-    std::cauchy_distribution<double> cd;
+    FLOAT_TYPE *ptr = new FLOAT_TYPE[n];
+    std::cauchy_distribution<FLOAT_TYPE> cd;
     wy::WyRand<uint64_t> rng(13);
     for(int i = 0; i < n; ++i) {
         ptr[i] = std::abs(cd(rng));
