@@ -53,6 +53,21 @@ One can sample k points at a time via `simd_sample_k`.
 The same algorithm is used, except that a heap of the lowest-priority (highest value) elements are kept, rather than
 the lowest-priority element.
 
+## argmin/argmax
+
+We also provide vectorized (and optionally parallelized) argmin/argmax for *float*s and *double*s. We may in the future add 
+versions for other fundamental types. This is also within the namespace `reservoir_simd`.
+
+The C api is:
+1. dargsel(double \*, size\_t, enum ArgReduction), where ArgReduction is either `ARGMIN` or `ARGMAX`.
+2. fargsel(float \*, size\_t, enum ArgReduction), where ArgReduction is either `ARGMIN` or `ARGMAX`.
+3. dargmin(double \*, size\_t)
+4. fargmin(float \*, size\_t)
+5. dargmax(double \*, size\_t)
+6. fargmax(float \*, size\_t)
+
+See argminmax.h for convenience functions in C++.
+
 ### Dependencies
 
 Requires [libsleef](https://github.com/shibatch/sleef), which can be installed easily with homebrew or apt-get on Ubuntu, or can be built from source.

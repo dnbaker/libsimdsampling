@@ -71,6 +71,23 @@ uint64_t fargsel(const float *weights, size_t n, ArgReduction ar)
     return ret;
 }
 
+uint64_t dargmax(const double *weights, size_t n) {
+    return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
+        double_argsel_fmt<UNALIGNED, ARGMAX>(weights, n): double_argsel_fmt<ALIGNED, ARGMAX>(weights, n);
+}
+uint64_t fargmax(const float *weights, size_t n) {
+    return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
+        float_argsel_fmt<UNALIGNED, ARGMAX>(weights, n): float_argsel_fmt<ALIGNED, ARGMAX>(weights, n);
+}
+uint64_t dargmin(const double *weights, size_t n) {
+    return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
+        double_argsel_fmt<UNALIGNED, ARGMIN>(weights, n): double_argsel_fmt<ALIGNED, ARGMIN>(weights, n);
+}
+uint64_t fargmin(const float *weights, size_t n) {
+    return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
+        float_argsel_fmt<UNALIGNED, ARGMIN>(weights, n): float_argsel_fmt<ALIGNED, ARGMIN>(weights, n);
+}
+
 
 uint64_t dargsel(const double *weights, size_t n, ArgReduction ar)
 {

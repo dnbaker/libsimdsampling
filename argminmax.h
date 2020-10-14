@@ -21,7 +21,11 @@ using std::size_t;
 extern "C" {
 #endif
 uint64_t fargsel(const float *weights, size_t n, enum ArgReduction ar);
+uint64_t fargmin(const float *weights, size_t n);
+uint64_t fargmax(const float *weights, size_t n);
 uint64_t dargsel(const double *weights, size_t n, enum ArgReduction ar);
+uint64_t dargmin(const double *weights, size_t n);
+uint64_t dargmax(const double *weights, size_t n);
 #ifdef __cplusplus
 }
 
