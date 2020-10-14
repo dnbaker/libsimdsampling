@@ -59,6 +59,7 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
 template<LoadFormat aln>
 int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
 
+extern "C" {
 uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed)
 {
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
@@ -72,6 +73,7 @@ uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed)
         ? float_simd_sampling_fmt<UNALIGNED>(weights, n, seed)
         : float_simd_sampling_fmt<ALIGNED>(weights, n, seed);
 }
+} // extern "C" for the C-api
 
 int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed)
 {
