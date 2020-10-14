@@ -1,4 +1,4 @@
-## libsimdsampling  [![Build Status](https://travis-ci.com/dnbaker/libsimdsampling.svg?branch=main)](https://travis-ci.com/dnbaker/libsimdsampling)
+## libsimdsampling
 
 libsimdsampling uses vectorized random number generation with reservoir sampling to perform data-parallel weighted point selection.
 
