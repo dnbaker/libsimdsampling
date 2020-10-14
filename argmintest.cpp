@@ -11,13 +11,12 @@ int main() {
     uint32_t minind = 17371;
     v[maxind] = 122323.;
     v[minind] = -133000;
-    std::fprintf(stderr, "About to call dargsel\n");
     size_t argmin = dargsel(v.data(), v.size(), ARGMIN);
     size_t argmax = dargsel(v.data(), v.size(), ARGMAX);
-    std::fprintf(stderr, "argmax %zu, expected %u\n", argmax, maxind);
-    std::fprintf(stderr, "argmin %zu, expected %u\n", argmin, minind);
     assert(argmax == maxind);
     assert(argmin == minind);
+    std::fprintf(stderr, "argmax %zu, expected %u\n", argmax, maxind);
+    std::fprintf(stderr, "argmin %zu, expected %u\n", argmin, minind);
     float *ptr = (float *)&v[0];
     size_t nf = v.size() * 2;
     for(size_t i = 0; i < nf; ++i) {
