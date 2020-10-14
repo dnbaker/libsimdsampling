@@ -59,7 +59,7 @@ template<LoadFormat aln, ArgReduction AR> uint64_t float_argsel_fmt(const float 
 extern "C" {
 uint64_t fargsel(const float *weights, size_t n, ArgReduction ar)
 {
-    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT;
+    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     uint64_t ret;
     switch((int(aligned) << 1) | (ar == ARGMAX)) {
         case 0: ret = float_argsel_fmt<UNALIGNED, ARGMIN>(weights, n) ;break;
@@ -91,7 +91,7 @@ uint64_t fargmin(const float *weights, size_t n) {
 
 uint64_t dargsel(const double *weights, size_t n, ArgReduction ar)
 {
-    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT;
+    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     uint64_t ret;
     switch((int(aligned) << 1) | (ar == ARGMAX)) {
         case 0: ret = double_argsel_fmt<UNALIGNED, ARGMIN>(weights, n) ;break;
