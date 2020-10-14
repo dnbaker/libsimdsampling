@@ -59,6 +59,7 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
 template<LoadFormat aln>
 int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
 
+extern "C" {
 uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed)
 {
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
@@ -72,6 +73,7 @@ uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed)
         ? float_simd_sampling_fmt<UNALIGNED>(weights, n, seed)
         : float_simd_sampling_fmt<ALIGNED>(weights, n, seed);
 }
+} // extern "C" for the C-api
 
 int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed)
 {
@@ -327,6 +329,9 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     constexpr double pdmul = 1. / (1ull<<52);
     double maxv = -std::numeric_limits<double>::max();
     __m128d vmaxv = _mm_set1_pd(maxv);
+#ifdef _OPENMP
+    std::vector<wy::WyRand<uint64_t>> rngs(nt);
+#endif
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
         auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
@@ -377,7 +382,9 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         if(v > bestv) bestv = v, bestind = i;
     }
 #endif
+#if defined(__AVX512F__) || defined(__AVX2__)
     OMP_ONLY(if(rngstates != &baserngstate) std::free(rngstates);)
+#endif
     return bestind;
 }
 
@@ -575,7 +582,9 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         }
     }
 #endif
+#if defined(__AVX512F__) || defined(__AVX2__)
     OMP_ONLY(if(rngstates != &baserngstate) std::free(rngstates);)
+#endif
     return bestind;
 }
 
