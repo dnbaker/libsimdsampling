@@ -50,8 +50,8 @@ simdsampling-st.o: simdsampling.cpp libsleef-dyn
 simdsampling.o: simdsampling.cpp libsleef-dyn
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp -lsleef
 
-libsimdsampling-st.a: simdsampling-st.o argminmax-st.o
-	$(AR) rcs $@ $< argminmax-st.o
+libsimdsampling-st.a: simdsampling-st.o argminmax-st.o $(SLEEFARG)
+	$(AR) rcs $@ $< argminmax-st.o $(SLEEFARG)
 
 libargminmax.a: argminmax.o
 	$(AR) rcs $@ $<
@@ -59,7 +59,7 @@ libargminmax.a: argminmax.o
 libargminmax-st.a: argminmax-st.o
 	$(AR) rcs $@ $<
 
-libsimdsampling.a: simdsampling.o argminmax.o
+libsimdsampling.a: simdsampling.o argminmax.o libsleef.a
 	$(AR) rcs $@ $< argminmax.o  $(SLEEFARG)
 
 argminmax.o: argminmax.cpp
