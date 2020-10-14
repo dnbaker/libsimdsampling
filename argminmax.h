@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <algorithm>
 #endif
+#include "macros.h"
 
 enum ArgReduction {
     ARGMIN,

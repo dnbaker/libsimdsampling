@@ -174,10 +174,10 @@ struct Cmp {
         return _mm512_cmp_pd_mask(x, y, _CMP_LT_OQ);
     }
     static INLINE __mmask16 cmp(__m512 x, __m512 y) {
-        return cmp(x, y, std::integral_constant<bool, AR == ARGMIN>());
+        return cmp(x, y, std::integral_constant<bool, AR == ARGMAX>());
     }
     static INLINE __mmask8 cmp(__m512d x, __m512d y) {
-        return cmp(x, y, std::integral_constant<bool, AR == ARGMIN>());
+        return cmp(x, y, std::integral_constant<bool, AR == ARGMAX>());
     }
     static INLINE float reduce(__m512 x, std::true_type) {
         return _mm512_reduce_max_ps(x);
@@ -192,10 +192,10 @@ struct Cmp {
         return _mm512_reduce_min_pd(x);
     }
     static INLINE double reduce(__m512d x) {
-        return reduce(x, std::integral_constant<bool, AR == ARGMIN>());
+        return reduce(x, std::integral_constant<bool, AR == ARGMAX>());
     }
     static INLINE float reduce(__m512 x) {
-        return reduce(x, std::integral_constant<bool, AR == ARGMIN>());
+        return reduce(x, std::integral_constant<bool, AR == ARGMAX>());
     }
     static INLINE __m512d max(__m512d x, __m512d y, std::true_type) {
         return _mm512_max_pd(x, y);
@@ -223,6 +223,7 @@ struct Cmp {
     static INLINE __m256 max(__m256 x, __m256 y, std::false_type) {
         return _mm256_min_ps(x, y);
     }
+
     static INLINE __m256 cmp(__m256 x, __m256 y, std::true_type) {
         return _mm256_cmp_ps(x, y, _CMP_GT_OQ);
     }
@@ -242,9 +243,21 @@ struct Cmp {
         return _mm256_cmp_pd(x, y, _CMP_EQ_OQ);
     }
 #endif
+#ifdef __SSE2__
+    static INLINE __m128 cmp(__m128 x, __m128 y, std::true_type) {
+        return _mm_cmp_ps(x, y, _CMP_GT_OQ);
+    }
+    static INLINE __m128 cmp(__m128 x, __m128 y, std::false_type) {
+        return _mm_cmp_ps(x, y, _CMP_LT_OQ);
+    }
+#endif
     template<typename T>
     static INLINE T max(T x, T y) {
         return max(x, y, std::integral_constant<bool, AR == ARGMAX>());
+    }
+    template<typename T>
+    static INLINE T max(T x) {
+        return max(x, std::integral_constant<bool, AR == ARGMAX>());
     }
     static INLINE __m128 max(__m128 x, std::false_type) {
         return broadcast_min(x);
@@ -283,7 +296,6 @@ uint64_t double_argsel_fmt(const double *weights, size_t n)
     constexpr size_t nperel = sizeof(__m512d) / sizeof(double);
     const size_t e = n / nperel;
     __m512d vmaxv = _mm512_set1_pd(STARTVAL);
-    double bestv = STARTVAL;
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
         __m512d ov = load<aln>((const double *)&weights[o * nperel]);
@@ -337,9 +349,9 @@ uint64_t double_argsel_fmt(const double *weights, size_t n)
     OMP_PFOR
     for(size_t i = 1; i < n; ++i) {
         auto v = weights[i];
-        if(v > bestv) {
+        if(Cmp<AR>::cmp(v,  bestv)) {
             OMP_CRITICAL
-            if(v > bestv) v = bestv, bestind = v;
+            if(Cmp<AR>::cmp(v,  bestv)) bestv = v, bestind = i;
         }
     }
 #endif
@@ -356,7 +368,7 @@ uint64_t float_argsel_fmt(const float * weights, size_t n)
 #ifdef __AVX512F__
     constexpr size_t nperel = sizeof(__m512) / sizeof(float);
     const size_t e = n / nperel;
-    __m512 vmaxv = _mm512_set1_ps(-std::numeric_limits<float>::max());
+    __m512 vmaxv = _mm512_set1_ps(STARTVAL);
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
@@ -413,7 +425,7 @@ uint64_t float_argsel_fmt(const float * weights, size_t n)
                 maxv = weights[p], bestind = p;
         }
     }
-#elif __AVX__
+#elif 0
     constexpr size_t nperel = sizeof(__m128d) / sizeof(float);
     const size_t e = n / nperel;
     float maxv = STARTVAL;
@@ -426,8 +438,8 @@ uint64_t float_argsel_fmt(const float * weights, size_t n)
         if(cmpmask) {
             OMP_CRITICAL
             if((cmpmask = _mm_movemask_ps(Cmp<AR>::cmp(divv, vmaxv)))) {
-                vmaxv = Cmp<AR>::maxmax(divv);
-                bestind = ctz(_mm_movemask_ps(Cmp<AR>::cmp(vmaxv, divv))) + o * nperel;
+                vmaxv = Cmp<AR>::max(divv);
+                bestind = ctz(_mm_movemask_ps(Cmp<AR>::eq(vmaxv, divv))) + o * nperel;
             }
         }
     }

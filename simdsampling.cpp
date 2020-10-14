@@ -329,6 +329,9 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     constexpr double pdmul = 1. / (1ull<<52);
     double maxv = -std::numeric_limits<double>::max();
     __m128d vmaxv = _mm_set1_pd(maxv);
+#ifdef _OPENMP
+    std::vector<wy::WyRand<uint64_t>> rngs(nt);
+#endif
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
         auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
@@ -379,7 +382,9 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         if(v > bestv) bestv = v, bestind = i;
     }
 #endif
+#if defined(__AVX512F__) || defined(__AVX2__)
     OMP_ONLY(if(rngstates != &baserngstate) std::free(rngstates);)
+#endif
     return bestind;
 }
 
@@ -577,7 +582,9 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         }
     }
 #endif
+#if defined(__AVX512F__) || defined(__AVX2__)
     OMP_ONLY(if(rngstates != &baserngstate) std::free(rngstates);)
+#endif
     return bestind;
 }
 
