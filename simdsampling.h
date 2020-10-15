@@ -15,7 +15,7 @@
 
 #define LIB_SIMDSAMPLING_MAJOR 0
 #define LIB_SIMDSAMPLING_MINOR 1
-#define LIB_SIMDSAMPLING_REVISION 2
+#define LIB_SIMDSAMPLING_REVISION 0
 #define LIB_SIMDSAMPLING_VERSION ((LIB_SIMDSAMPLING_MAJOR << 16) | (LIB_SIMDSAMPLING_MINOR << 8)| LIB_SIMDSAMPLING_REVISION)
 
 
@@ -33,6 +33,7 @@ int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64
 int simd_sample_get_version();
 int simd_sample_get_major_version();
 int simd_sample_get_minor_version();
+int simd_sample_get_revision_version();
 
 #ifdef __cplusplus
 } // extern C

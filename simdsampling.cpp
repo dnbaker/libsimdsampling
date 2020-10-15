@@ -1100,6 +1100,8 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
     return static_cast<int>(be);
 }
 
+extern "C" {
+
 int simd_sample_get_version() {
     return LIB_SIMDSAMPLING_VERSION;
 }
@@ -1111,4 +1113,6 @@ int simd_sample_get_minor_version() {
 }
 int simd_sample_get_revision_version() {
     return LIB_SIMDSAMPLING_REVISION;
+}
+
 }
