@@ -2,9 +2,12 @@
 #include <cassert>
 #include <argminmax.h>
 #include <cstdio>
+#include <string>
 
 
-int main() {
+int main(int argc, char **argv) {
+    size_t seed = argc == 1 ?  int(std::hash<std::string>()(argv[0])) : std::atoi(argv[1]) ? std::atoi(argv[1]): int(std::hash<std::string>()(argv[1]));
+    std::srand(seed);
     std::vector<double> v(1000000);
     for(auto &i: v) i = double(std::rand()) / RAND_MAX;
     uint32_t maxind = 100000;
