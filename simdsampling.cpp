@@ -24,13 +24,17 @@
 #define SIMD_SAMPLING_ALIGNMENT 1
 #endif
 
-// Ensure that we don't divide by 0
-template<typename T>
-struct INC {
-    static constexpr T value = 0;
-};
-template<> struct INC<float> {static constexpr float value = 1.40129846E-45;};
-template<> struct INC<double> {static constexpr double value = 4.9406564584124654e-324;};
+// Do we really need to `max(0, weights)`?
+// It should keep us robust to slightly off results due to precision
+// but it does waste a couple instructions
+
+#ifndef LSS_MAX_0
+#define LSS_MAX_0 0
+#endif
+
+#ifndef USE_AVX256_RNG
+#define USE_AVX256_RNG 1
+#endif
 
 
 INLINE __m128 broadcast_max(__m128 x) {
@@ -97,16 +101,32 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
 
 #ifdef __AVX512F__
 INLINE __m512 load(const float *ptr, std::false_type) {
+#if LSS_MAX_0
+    return _mm512_max_ps(_mm512_loadu_ps(ptr), _mm512_setzero_ps());
+#else
     return _mm512_loadu_ps(ptr);
+#endif
 }
 INLINE __m512d load(const double *ptr, std::false_type) {
+#if LSS_MAX_0
+    return _mm512_max_pd(_mm512_loadu_pd(ptr), _mm512_setzero_pd());
+#else
     return _mm512_loadu_pd(ptr);
+#endif
 }
 INLINE __m512 load(const float *ptr, std::true_type) {
+#if LSS_MAX_0
+    return _mm512_max_ps(_mm512_load_ps(ptr), _mm512_setzero_ps());
+#else
     return _mm512_load_ps(ptr);
+#endif
 }
 INLINE __m512d load(const double *ptr, std::true_type) {
+#if LSS_MAX_0
+    return _mm512_max_pd(_mm512_load_pd(ptr), _mm512_setzero_pd());
+#else
     return _mm512_load_pd(ptr);
+#endif
 }
 template<LoadFormat aln>
 __m512d load(const double *ptr) {
@@ -118,16 +138,32 @@ __m512 load(const float *ptr) {
 }
 #elif defined(__AVX2__)
 INLINE __m256 load(const float *ptr, std::false_type) {
+#if LSS_MAX_0
+    return _mm256_max_ps(_mm256_loadu_ps(ptr), _mm256_setzero_ps());
+#else
     return _mm256_loadu_ps(ptr);
+#endif
 }
 INLINE __m256d load(const double *ptr, std::false_type) {
+#if LSS_MAX_0
+    return _mm256_max_pd(_mm256_loadu_pd(ptr), _mm256_setzero_pd());
+#else
     return _mm256_loadu_pd(ptr);
+#endif
 }
 INLINE __m256 load(const float *ptr, std::true_type) {
+#if LSS_MAX_0
+    return _mm256_max_ps(_mm256_load_ps(ptr), _mm256_setzero_ps());
+#else
     return _mm256_load_ps(ptr);
+#endif
 }
 INLINE __m256d load(const double *ptr, std::true_type) {
+#if LSS_MAX_0
+    return _mm256_max_pd(_mm256_load_pd(ptr), _mm256_setzero_pd());
+#else
     return _mm256_load_pd(ptr);
+#endif
 }
 template<LoadFormat aln>
 __m256 load(const float *ptr) {
@@ -152,11 +188,20 @@ INLINE __m128d load(const double *ptr, std::true_type) {
 }
 template<LoadFormat aln>
 __m128d load(const double *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
+   __m128d ret = load(ptr, std::integral_constant<bool, aln == ALIGNED>());
+#if LSS_MAX_0
+    ret = _mm_max_pd(ret, _mm_setzero_pd());
+#endif
+    return ret;
 }
 template<LoadFormat aln>
 __m128 load(const float *ptr) {
     return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
+   __m128 ret = load(ptr, std::integral_constant<bool, aln == ALIGNED>());
+#if LSS_MAX_0
+    ret = _mm_max_ps(ret, _mm_setzero_ps());
+#endif
+    return ret;
 }
 #endif
 
@@ -243,7 +288,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 
         const __m512d v3 = Sleef_logd8_u35(v2);
         // Log-transform the [0, 1] sampling
-        __m512d ov = _mm512_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm512_set1_pd(INC<double>::value));
+        __m512d ov = load<aln>((const double *)&weights[o * nperel]);
         auto divv = _mm512_div_pd(v3, ov);
         auto cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
@@ -297,7 +342,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
         auto v4 = _mm256_mul_pd(v3, _mm256_set1_pd(pdmul));
         auto v5 = Sleef_logd4_u35(v4);
-        __m256d ov = _mm256_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm256_set1_pd(INC<double>::value));
+        __m256d ov = load<aln>((const double *)&weights[o * nperel]);
         auto divv = _mm256_div_pd(v5, ov);
         auto cmp = _mm256_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm256_movemask_pd(cmp);
@@ -328,7 +373,9 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     const size_t e = n / nperel;
     constexpr double pdmul = 1. / (1ull<<52);
     double maxv = -std::numeric_limits<double>::max();
+#ifdef __AVX__
     __m128d vmaxv = _mm_set1_pd(maxv);
+#endif
 #ifdef _OPENMP
     std::vector<wy::WyRand<uint64_t>> rngs(nt);
 #endif
@@ -341,11 +388,11 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         auto v3 = _mm_sub_pd(_mm_castsi128_pd(v2), _mm_set1_pd(0x0010000000000000));
         auto v4 = _mm_mul_pd(v3, _mm_set1_pd(pdmul));
         auto v5 = Sleef_logd2_u35(v4);
-        __m128d ov6 = _mm_add_pd(load<aln>((const double *) &weights[o * nperel]), _mm_set1_pd(INC<double>::value));
+        __m128d ov6 = load<aln>((const double *) &weights[o * nperel]);
         auto divv = _mm_div_pd(v5, ov6);
-        __m128d cmp;
         int cmpmask;
 #if __AVX__
+        __m128d cmp;
         cmp = _mm_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
         cmpmask = _mm_movemask_pd(cmp);
 #else
@@ -363,7 +410,6 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
                 vmaxv = _mm_max_pd(divv, _mm_permute_pd(divv, 1));
 #else
                 maxv = std::max(divv[0], divv[1]);
-                vmaxv = _mm_set1_pd(maxv);
 #endif
                 bestind = (divv[1] > divv[0]) + o * nperel;
             }
@@ -403,7 +449,9 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     std::vector<wy::WyRand<uint64_t>> rngs(nt);
     for(auto &i: rngs) i.seed(baserng());
 #endif
+#if defined(__AVX512F__) || defined(__AVX2__)
     constexpr float psmul = 1. / (1ull<<29);
+#endif
 #ifdef __AVX512F__
     #if __AVX512DQ__
     using simdpcg_t = avx512_pcg32_random_t;
@@ -440,14 +488,13 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     __m512 vmaxv = _mm512_set1_ps(-std::numeric_limits<float>::max());
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
-        auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
-                             baserng);
-        __m512i v = _mm512_srli_epi32(_mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng()), 3);
+        auto &rng = OMP_ELSE(rngstates[omp_get_thread_num()],
+                             baserngstate);
+        __m512i v = _mm512_srli_epi32(_mm512_inserti32x8(_mm512_castsi256_si512(avx512_pcg32_random_r(&rng)), avx512_pcg32_random_r(&rng), 1), 3);
         auto v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         auto v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
-        auto ov6 = _mm512_add_ps(lv, _mm512_set1_ps(INC<float>::value));
-        auto divv = _mm512_div_ps(v5, ov6);
+        auto divv = _mm512_div_ps(v5, lv);
         auto cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
             auto newmaxv = _mm512_set1_ps(_mm512_reduce_max_ps(divv));
@@ -507,7 +554,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         }
 #endif
         auto v3 = Sleef_logf8_u35(v2);
-        __m256 ov6 = _mm256_add_ps(load<aln>((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>::value));
+        __m256 ov6 = load<aln>((const float *) &weights[o * nperel]);
         auto divv = _mm256_div_ps(v3, ov6);
         auto cmp = _mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm256_movemask_ps(cmp);
@@ -545,7 +592,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         __m128i v = _mm_set_epi64x(rng(), rng());
         auto v3 = _mm_mul_ps(_mm_cvtepi32_ps(v), _mm_set1_ps(psmul));
         auto v5 = Sleef_logf4_u35(v3);
-        __m128 ov6 = _mm_max_ps(load<aln>((const float *) &weights[o * nperel]), _mm_set1_ps(INC<float>::value));
+        __m128 ov6 = load<aln>((const float *) &weights[o * nperel]);
         auto divv = _mm_div_ps(v5, ov6);
         auto cmp = _mm_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm_movemask_ps(cmp);
@@ -625,7 +672,9 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
     pq_t<double> basepq(k);
 #endif
 
-    constexpr double pdmul = 1. / (1ull<<52);
+#if defined(__AVX512F__) || defined(__AVX2__)
+    static constexpr double pdmul = 1. / (1ull<<52);
+#endif
 #ifdef __AVX512F__
     constexpr size_t nperel = sizeof(__m512d) / sizeof(double);
     const size_t e = n / nperel;
@@ -652,7 +701,7 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
 
         const __m512d v3 = Sleef_logd8_u35(v2);
         // Log-transform the [0, 1] sampling
-        __m512d ov = _mm512_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm512_set1_pd(INC<double>::value));
+        __m512d ov = load<aln>((const double *)&weights[o * nperel]);
         auto divv = _mm512_div_pd(v3, ov);
         auto cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
@@ -689,7 +738,7 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
         auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
         auto v4 = _mm256_mul_pd(v3, _mm256_set1_pd(pdmul));
         auto v5 = Sleef_logd4_u35(v4);
-        __m256d ov = _mm256_add_pd(load<aln>((const double *)&weights[o * nperel]), _mm256_set1_pd(INC<double>::value));
+        __m256d ov = load<aln>((const double *)&weights[o * nperel]);
         auto divv = _mm256_div_pd(v5, ov);
         auto cmp = _mm256_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm256_movemask_pd(cmp);
@@ -728,7 +777,7 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
         auto v3 = _mm_sub_pd(_mm_castsi128_pd(v2), _mm_set1_pd(0x0010000000000000));
         auto v4 = _mm_mul_pd(v3, _mm_set1_pd(pdmul));
         auto v5 = Sleef_logd2_u35(v4);
-        __m128d ov6 = _mm_add_pd(load<aln>((const double *) &weights[o * nperel]), _mm_set1_pd(INC<double>::value));
+        __m128d ov6 = load<aln>((const double *) &weights[o * nperel]);
         auto divv = _mm_div_pd(v5, ov6);
         auto cmp = _mm_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
         const auto cmpmask = _mm_movemask_pd(cmp);
@@ -758,6 +807,7 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
     OMP_PFOR
     for(size_t i = 0; i < n; ++i) {
         OMP_ONLY(const int tid = omp_get_thread_num();)
+        auto &rng = OMP_ELSE(rngs[i], baserng);
         auto &pq = OMP_ELSE(pqs[tid], basepq);
         if(weights[i] > 0.) {
             auto v = std::log(std::uniform_real_distribution<double>()(rng)) / weights[i];
@@ -812,24 +862,52 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
 
     constexpr float psmul = 1. / (1ull<<29);
 #ifdef __AVX512F__
+    #if __AVX512DQ__
+    using simdpcg_t = avx512_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.multiplier = _mm512_set1_epi64(0x5851f42d4c957f2d);
+        x.state = _mm512_set_epi64(baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng());
+        x.inc = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
+    };
+    #else
+    using simdpcg_t = avx2_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.state[0] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.state[1] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc[0] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.inc[1] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
+        x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
+    };
+    #endif
+    simdpcg_t baserngstate;
+#ifdef _OPENMP
+    simdpcg_t *rngstates = &baserngstate;
+    if(nt > 1) {
+        if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
+            throw std::bad_alloc();
+        for(int i = 0; i < nt; ++i) init(rngstates[i]);
+    } else
+#endif
+    {
+        init(baserngstate);
+    }
     constexpr size_t nperel = sizeof(__m512) / sizeof(float);
     const size_t e = n / nperel;
     __m512 vmaxv = _mm512_set1_ps(-std::numeric_limits<float>::max());
-    size_t o;
 
     OMP_PFOR
-    for(o = 0; o < e; ++o) {
+    for(size_t o = 0; o < e; ++o) {
         OMP_ONLY(const int tid = omp_get_thread_num();)
-        auto &rng = OMP_ELSE(rngs[tid],
-                             baserng);
+        auto rngptr = OMP_ELSE(&rngstates[tid],
+                               &baserngstate);
         auto &pq = OMP_ELSE(pqs[tid],
                             basepq);
-        __m512i v = _mm512_srli_epi32(_mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng()), 3);
-        auto v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
-        auto v5 = Sleef_logf16_u35(v4);
+        __m512i v = _mm512_srli_epi32(_mm512_inserti32x8(_mm512_castsi256_si512(avx512_pcg32_random_r(&rng)), avx512_pcg32_random_r(&rng), 1), 3);
+        __m512 v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
+        __m512 v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
-        auto ov6 = _mm512_add_ps(lv, _mm512_set1_ps(INC<float>::value));
-        auto divv = _mm512_div_ps(v5, ov6);
+        auto divv = _mm512_div_ps(v5, lv);
         auto cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
             for(;;) {
@@ -853,18 +931,53 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
     constexpr size_t nperel = sizeof(__m256) / sizeof(float);
     const size_t e = (n / nperel);
     __m256 vmaxv = _mm256_set1_ps(-std::numeric_limits<float>::max());
+#ifdef USE_AVX256_RNG
+    using simdpcg_t = avx256_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.state = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
+        x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
+    };
+#else
+    using simdpcg_t = avx2_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.state[0] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.state[1] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc[0] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.inc[1] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
+        x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
+    };
+#endif
+    simdpcg_t baserngstate;
+#ifdef _OPENMP
+    simdpcg_t *rngstates = &baserngstate;
+    if(nt > 1) {
+        if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
+            throw std::bad_alloc();
+        for(int i = 0; i < nt; ++i) init(rngstates[i]);
+    } else
+#endif
+    {
+        init(baserngstate);
+    }
     size_t o = 0;
     OMP_PFOR
     for(o = 0; o < e; ++o) {
         OMP_ONLY(const int tid = omp_get_thread_num();)
-        auto &rng = OMP_ELSE(rngs[tid],
-                             baserng);
+        auto rngptr = OMP_ELSE(&rngstates[tid],
+                               &baserngstate);
         pq_t<float> &pq = OMP_ELSE(pqs[tid],
                                     basepq);
-        __m256i v = _mm256_srli_epi32(_mm256_set_epi64x(rng(), rng(), rng(), rng()), 3);
+#if USE_AVX256_RNG
+        __m256i v = _mm256_srli_epi32(_mm256_inserti128_si256(_mm256_castsi128_si256(avx256_pcg32_random_r(rngptr)), avx256_pcg32_random_r(rngptr), 1), 3);
+#else
+        __m256i v = _mm256_srli_epi32(avx2_pcg32_random_r(rngptr), 3);
+#endif
         auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
         auto v3 = Sleef_logf8_u35(v2);
-        __m256 ov6 = _mm256_add_ps(load<aln>((const float *) &weights[o * nperel]), _mm256_set1_ps(INC<float>::value));
+        __m256 ov6 = load<aln>((const float *) &weights[o * nperel]);
         auto divv = _mm256_div_ps(v3, ov6);
         auto cmp = _mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
         auto cmpmask = _mm256_movemask_ps(cmp);
