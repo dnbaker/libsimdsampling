@@ -32,6 +32,7 @@ int main(int argc, char **argv) {
     wy::WyRand<uint64_t> rng(13);
     for(int i = 0; i < n; ++i) {
         ptr[i] = std::abs(cd(rng));
+        if(i % 7 == 0) ptr[i] = 0.;
     }
     auto sel = reservoir_simd::sample(ptr, n, seed);
     std::fprintf(stderr, "Selected: %u with weight %g\n", int(sel), ptr[sel]);

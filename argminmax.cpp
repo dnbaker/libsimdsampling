@@ -20,29 +20,21 @@
 #define LSS_ALIGNMENT 1
 #endif
 
-// Ensure that we don't divide by 0
-template<typename T>
-struct INC {
-    static constexpr T value = 0;
-};
-template<> struct INC<float> {static constexpr float value = 1.40129846E-45;};
-template<> struct INC<double> {static constexpr double value = 4.9406564584124654e-324;};
 
+template<typename Func>
+INLINE __m128 broadcast_reduce(__m128 x, const Func &func) {
+    __m128 m1 = _mm_shuffle_ps(x, x, _MM_SHUFFLE(0,0,3,2));
+    __m128 m2 = func(x, m1);
+    __m128 m3 = _mm_shuffle_ps(m2, m2, _MM_SHUFFLE(0,0,0,1));
+    return func(m2, m3);
+}
 
 INLINE __m128 broadcast_max(__m128 x) {
-    __m128 max1 = _mm_shuffle_ps(x, x, _MM_SHUFFLE(0,0,3,2));
-    __m128 max2 = _mm_max_ps(x, max1);
-    __m128 max3 = _mm_shuffle_ps(max2, max2, _MM_SHUFFLE(0,0,0,1));
-    return _mm_max_ps(max2, max3);
+    return broadcast_reduce<decltype(_mm_max_ps)>(x, _mm_max_ps);
 }
-
 INLINE __m128 broadcast_min(__m128 x) {
-    __m128 max1 = _mm_shuffle_ps(x, x, _MM_SHUFFLE(0,0,3,2));
-    __m128 max2 = _mm_min_ps(x, max1);
-    __m128 max3 = _mm_shuffle_ps(max2, max2, _MM_SHUFFLE(0,0,0,1));
-    return _mm_min_ps(max2, max3);
+    return broadcast_reduce<decltype(_mm_min_ps)>(x, _mm_min_ps);
 }
-
 
 enum LoadFormat {
     ALIGNED,
@@ -59,7 +51,7 @@ template<LoadFormat aln, ArgReduction AR> uint64_t float_argsel_fmt(const float 
 extern "C" {
 uint64_t fargsel(const float *weights, size_t n, ArgReduction ar)
 {
-    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT;
+    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     uint64_t ret;
     switch((int(aligned) << 1) | (ar == ARGMAX)) {
         case 0: ret = float_argsel_fmt<UNALIGNED, ARGMIN>(weights, n) ;break;
@@ -91,7 +83,7 @@ uint64_t fargmin(const float *weights, size_t n) {
 
 uint64_t dargsel(const double *weights, size_t n, ArgReduction ar)
 {
-    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT;
+    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     uint64_t ret;
     switch((int(aligned) << 1) | (ar == ARGMAX)) {
         case 0: ret = double_argsel_fmt<UNALIGNED, ARGMIN>(weights, n) ;break;
