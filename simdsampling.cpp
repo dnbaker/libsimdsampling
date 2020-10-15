@@ -207,11 +207,17 @@ __m128 load(const float *ptr) {
 
 #if __AVX512F__ && (!defined(__AVX512DQ__) || !__AVX512DQ__)
 INLINE __m512i pack_result(__m128i a, __m128i b, __m128i c, __m128i d) {
-    __m512i ret = _mm512_setzero_si512();
-    ret = _mm512_inserti32x4(ret, a, 0);
+    __m512i ret = _mm512_castsi128_si512(a);
     ret = _mm512_inserti32x4(ret, b, 1);
     ret = _mm512_inserti32x4(ret, c, 2);
     ret = _mm512_inserti32x4(ret, d, 3);
+    return ret;
+}
+#endif
+#if __AVX512F__
+INLINE __m512i pack_result(__m256i a, __m256i b) {
+    __m512i ret = _mm512_castsi256_si512(a);
+     ret = _mm512_inserti64x4(ret, b, 1);
     return ret;
 }
 #endif
@@ -461,12 +467,17 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         x.inc = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
     };
     #else
-    using simdpcg_t = avx2_pcg32_random_t;
+    using simdpcg_t = avx256_pcg32_random_t;
     auto init = [&](simdpcg_t &x) {
+#if 0
         x.state[0] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
         x.state[1] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
         x.inc[0] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
         x.inc[1] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+#else
+        x.state = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+#endif
         x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
         x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
     };
@@ -488,9 +499,14 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     __m512 vmaxv = _mm512_set1_ps(-std::numeric_limits<float>::max());
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
-        auto &rng = OMP_ELSE(rngstates[omp_get_thread_num()],
-                             baserngstate);
-        __m512i v = _mm512_srli_epi32(_mm512_inserti32x8(_mm512_castsi256_si512(avx512_pcg32_random_r(&rng)), avx512_pcg32_random_r(&rng), 1), 3);
+        auto rngptr = OMP_ELSE(&rngstates[omp_get_thread_num()],
+                               &baserngstate);
+        __m512i v =
+#ifdef __AVX512DQ__
+        _mm512_srli_epi32(_mm512_inserti32x8(_mm512_castsi256_si512(avx512_pcg32_random_r(rngptr)), avx512_pcg32_random_r(rngptr), 1), 3);
+#else
+        _mm512_srli_epi32(pack_result(avx256_pcg32_random_r(rngptr), avx256_pcg32_random_r(rngptr),avx256_pcg32_random_r(rngptr),avx256_pcg32_random_r(rngptr)), 3);
+#endif
         auto v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         auto v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
@@ -676,6 +692,38 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
     static constexpr double pdmul = 1. / (1ull<<52);
 #endif
 #ifdef __AVX512F__
+    #if __AVX512DQ__
+    using simdpcg_t = avx512bis_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.multiplier = _mm512_set1_epi64(0x5851f42d4c957f2d);
+        x.state[0] = _mm512_set_epi64(baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng());
+        x.state[1] = _mm512_set_epi64(baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng());
+        x.inc[0] = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
+        x.inc[1] = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
+    };
+    #else
+    using simdpcg_t = avx2_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.state[0] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.state[1] = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc[0] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.inc[1] = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
+        x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
+    };
+    #endif
+    simdpcg_t baserngstate;
+#ifdef _OPENMP
+    simdpcg_t *rngstates = &baserngstate;
+    if(nt > 1) {
+        if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
+            throw std::bad_alloc();
+        for(int i = 0; i < nt; ++i) init(rngstates[i]);
+    } else
+#endif
+    {
+        init(baserngstate);
+    }
     constexpr size_t nperel = sizeof(__m512d) / sizeof(double);
     const size_t e = n / nperel;
     __m512d vmaxv = _mm512_set1_pd(-std::numeric_limits<double>::max());
@@ -683,11 +731,18 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
         OMP_ONLY(const int tid = omp_get_thread_num();)
-        auto &rng = OMP_ELSE(rngs[tid],
-                             baserng);
+        auto &rng = OMP_ELSE(rngstates[tid],
+                             baserngstate);
         auto &pq = OMP_ELSE(pqs[tid],
                             basepq);
-        __m512i v = _mm512_set_epi64(rng(), rng(), rng(), rng(), rng(), rng(), rng(), rng());
+        __m512i v =
+#if __AVX512DQ__
+                    avx512bis_pcg32_random_r(&rng);
+#else
+                    pack_result(avx2_pcg32_random_r(&rng), avx2_pcg32_random_r(&rng));
+                    //pack_result(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng));
+#endif
+
         // Generate the vector
 
         const __m512d v2 =
@@ -863,11 +918,13 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
     constexpr float psmul = 1. / (1ull<<29);
 #ifdef __AVX512F__
     #if __AVX512DQ__
-    using simdpcg_t = avx512_pcg32_random_t;
+    using simdpcg_t = avx512bis_pcg32_random_t;
     auto init = [&](simdpcg_t &x) {
         x.multiplier = _mm512_set1_epi64(0x5851f42d4c957f2d);
-        x.state = _mm512_set_epi64(baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng());
-        x.inc = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
+        x.state[0] = _mm512_set_epi64(baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng());
+        x.state[1] = _mm512_set_epi64(baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng(), baserng());
+        x.inc[0] = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
+        x.inc[1] = _mm512_set_epi64(baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull, baserng() | 1ull);
     };
     #else
     using simdpcg_t = avx2_pcg32_random_t;
@@ -903,7 +960,12 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
                                &baserngstate);
         auto &pq = OMP_ELSE(pqs[tid],
                             basepq);
-        __m512i v = _mm512_srli_epi32(_mm512_inserti32x8(_mm512_castsi256_si512(avx512_pcg32_random_r(rngptr)), avx512_pcg32_random_r(rngptr), 1), 3);
+        __m512i v =
+#if __AVX512DQ__
+                    _mm512_srli_epi32(avx512bis_pcg32_random_r(rngptr), 3);
+#else
+                    _mm512_srli_epi32(pack_result(avx2_pcg32_random_r(rngptr), avx2_pcg32_random_r(rngptr)), 3);
+#endif
         __m512 v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         __m512 v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
