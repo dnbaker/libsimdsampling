@@ -903,7 +903,7 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
                                &baserngstate);
         auto &pq = OMP_ELSE(pqs[tid],
                             basepq);
-        __m512i v = _mm512_srli_epi32(_mm512_inserti32x8(_mm512_castsi256_si512(avx512_pcg32_random_r(&rng)), avx512_pcg32_random_r(&rng), 1), 3);
+        __m512i v = _mm512_srli_epi32(_mm512_inserti32x8(_mm512_castsi256_si512(avx512_pcg32_random_r(rngptr)), avx512_pcg32_random_r(rngptr), 1), 3);
         __m512 v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         __m512 v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
