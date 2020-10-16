@@ -35,6 +35,37 @@ INLINE __m128 broadcast_max(__m128 x) {
 INLINE __m128 broadcast_min(__m128 x) {
     return broadcast_reduce<decltype(_mm_min_ps)>(x, _mm_min_ps);
 }
+template<typename Func>
+INLINE __m256 broadcast_reduce(__m256 x, const Func &func) {
+    const __m256 permHalves = _mm256_permute2f128_ps(x, x, 1);
+    const __m256 m0 = func(permHalves, x);
+    const __m256 perm0 = _mm256_permute_ps(m0, 0b01001110);
+    const __m256 m1 = func(m0, perm0);
+    const __m256 perm1 = _mm256_permute_ps(m1, 0b10110001);
+    const __m256 m2 = func(perm1, m1);
+    return m2;
+}
+
+INLINE __m256 broadcast_max(__m256 x) {
+    return broadcast_reduce<decltype(_mm256_max_ps)>(x, _mm256_max_ps);
+}
+INLINE __m256 broadcast_min(__m256 x) {
+    return broadcast_reduce<decltype(_mm256_min_ps)>(x, _mm256_min_ps);
+}
+template<typename Func>
+INLINE __m256d broadcast_reduce(__m256d x, const Func &func) {
+    __m256d y = _mm256_permute2f128_pd(x, x, 1);
+    __m256d m1 = func(x, y);
+    __m256d m2 = _mm256_permute_pd(m1, 5);
+    __m256d newmaxv = func(m1, m2);
+    return newmaxv;
+};
+INLINE __m256d broadcast_max(__m256d x) {
+    return broadcast_reduce<decltype(_mm256_max_pd)>(x, _mm256_max_pd);
+}
+INLINE __m256d broadcast_min(__m256d x) {
+    return broadcast_reduce<decltype(_mm256_min_pd)>(x, _mm256_min_pd);
+}
 
 enum LoadFormat {
     ALIGNED,
@@ -251,6 +282,24 @@ struct Cmp {
     static INLINE __m256d eq(__m256d x, __m256d y) {
         return _mm256_cmp_pd(x, y, _CMP_EQ_OQ);
     }
+    static INLINE __m256d max(__m256d x, std::false_type) {
+        return broadcast_min(x);
+    }
+    static INLINE __m256d max(__m256d x, std::true_type) {
+        return broadcast_max(x);
+    }
+    static INLINE __m256d max(__m256d x) {
+        return max(x, std::integral_constant<bool, AR == ARGMAX>());
+    }
+    static INLINE __m256 max(__m256 x) {
+        return max(x, std::integral_constant<bool, AR == ARGMAX>());
+    }
+    static INLINE __m256 max(__m256 x, std::false_type) {
+        return broadcast_min(x);
+    }
+    static INLINE __m256 max(__m256 x, std::true_type) {
+        return broadcast_max(x);
+    }
 #endif
 #ifdef __SSE2__
     static INLINE __m128 cmp(__m128 x, __m128 y, std::true_type) {
@@ -258,6 +307,12 @@ struct Cmp {
     }
     static INLINE __m128 cmp(__m128 x, __m128 y, std::false_type) {
         return _mm_cmp_ps(x, y, _CMP_LT_OQ);
+    }
+    static INLINE __m128 max(__m128 x, std::false_type) {
+        return broadcast_min(x);
+    }
+    static INLINE __m128 max(__m128 x, std::true_type) {
+        return broadcast_max(x);
     }
 #endif
     template<typename T>
@@ -267,12 +322,6 @@ struct Cmp {
     template<typename T>
     static INLINE T max(T x) {
         return max(x, std::integral_constant<bool, AR == ARGMAX>());
-    }
-    static INLINE __m128 max(__m128 x, std::false_type) {
-        return broadcast_min(x);
-    }
-    static INLINE __m128 max(__m128 x, std::true_type) {
-        return broadcast_max(x);
     }
     static INLINE float cmp(const float x, const float y, std::false_type) {
         return x < y;
@@ -336,14 +385,11 @@ uint64_t double_argsel_fmt(const double *weights, size_t n)
         auto cmp = Cmp<AR>::cmp(ov, vmaxv);
         auto cmpmask = _mm256_movemask_pd(cmp);
         if(cmpmask) {
-            __m256d y = _mm256_permute2f128_pd(ov, ov, 1);
-            __m256d m1 = Cmp<AR>::max(ov, y);
-            __m256d m2 = _mm256_permute_pd(m1, 5);
-            __m256d newmaxv = Cmp<AR>::max(m1, m2);
+            __m256d newmax = Cmp<AR>::max(ov);
             {
                 OMP_CRITICAL
                 if(_mm256_movemask_pd(Cmp<AR>::cmp(ov, vmaxv))) {
-                    vmaxv = newmaxv;
+                    vmaxv = newmax;
                     bestind = ctz(cmpmask) + o * nperel;
                 }
             }
@@ -409,12 +455,7 @@ uint64_t float_argsel_fmt(const float * weights, size_t n)
         auto cmp = Cmp<AR>::cmp(divv, vmaxv);
         auto cmpmask = _mm256_movemask_ps(cmp);
         if(cmpmask) {
-            const __m256 permHalves = _mm256_permute2f128_ps(divv, divv, 1);
-            const __m256 m0 = Cmp<AR>::max(permHalves, divv);
-            const __m256 perm0 = _mm256_permute_ps(m0, 0b01001110);
-            const __m256 m1 = Cmp<AR>::max(m0, perm0);
-            const __m256 perm1 = _mm256_permute_ps(m1, 0b10110001);
-            const __m256 m2 = Cmp<AR>::max(perm1, m1);
+            const __m256 m2 = Cmp<AR>::max(divv);
             OMP_CRITICAL
             {
                 cmp = Cmp<AR>::eq(m2, divv);
