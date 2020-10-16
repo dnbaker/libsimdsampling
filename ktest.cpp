@@ -26,6 +26,8 @@ int main(int argc, char **argv) {
         ptr[i] = 1.;
     }
     auto sel = reservoir_simd::sample_k(ptr, n, 5, seed);
+    auto sel2 = reservoir_simd::sample_k(ptr, n, 5, seed + 1, false);
     for(const auto v: sel) std::fprintf(stderr, "%u\n", (int)v);
+    for(const auto v: sel2) std::fprintf(stderr, "%u\n", (int)v);
     delete[] ptr;
 }

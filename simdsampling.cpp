@@ -8,6 +8,7 @@
 #include "sleef.h"
 #include <limits>
 #include <queue>
+#include <memory>
 
 #if __AVX512F__ || __AVX2__
 #include "simdpcg32.h"
@@ -59,9 +60,9 @@ uint64_t float_simd_sampling_fmt(const float *weights, size_t n, uint64_t seed);
 
 // Multiple-sample
 template<LoadFormat aln>
-int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
+int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
+int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 
 extern "C" {
 uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed)
@@ -79,25 +80,25 @@ uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed)
 }
 } // extern "C" for the C-api
 
-int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed)
+int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
 {
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
-        ? double_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed)
-        : double_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed);
+        ? double_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed, with_replacement)
+        : double_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed, with_replacement);
 }
 
-int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed)
+int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
 {
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
-        ? float_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed)
-        : float_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed);
+        ? float_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed, with_replacement)
+        : float_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed, with_replacement);
 }
 
 
 template<LoadFormat aln>
-int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
+int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
+int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 
 #ifdef __AVX512F__
 INLINE __m512 load(const float *ptr, std::false_type) {
@@ -670,7 +671,7 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
 };
 
 template<LoadFormat aln>
-int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed)
+int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
 {
     if(k <= 0) throw std::invalid_argument("k must be > 0");
     wy::WyRand<uint64_t> baserng(seed * seed + 13);
@@ -883,22 +884,58 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
         }
         pqs.pop_back();
     }
-    const size_t be = lastpq.size();
-    for(size_t i = 0; i < be; ++i) {
-        ret[i] = lastpq.top().second; lastpq.pop();
-    }
-#else
-    const size_t be = basepq.size();
-    for(size_t i = 0; i < be; ++i) {
-        ret[i] = basepq.top().second;
-        basepq.pop();
-    }
 #endif
+    auto &rpq = OMP_ELSE(lastpq, basepq);
+    const size_t be = rpq.size();
+    if(with_replacement) {
+        // Use cascade sampling
+        auto tmp = std::unique_ptr<double[]>(new double[be]);
+        auto rettmp = std::unique_ptr<uint64_t[]>(new uint64_t[be]);
+        std::copy(ret, ret + be, rettmp.get());
+        if(unlikely(tmp == nullptr)) throw std::bad_alloc();
+        for(size_t i = 0; i < be; ++i) {
+            const auto ind = be - i - 1;
+            ret[ind] = rpq.top().second;
+            tmp[ind] = rpq.top().first;
+            rpq.pop();
+        }
+        // Now, adapt sampling without replacement
+        // to consider replacement
+        OMP_PFOR
+        for(size_t i = 1; i < be; ++i) {
+            size_t j;
+#if 0
+            if(i > nperel) {
+                size_t nsimd = be / nperel;
+                for(size_t simdidx = 0; simdidx < nsimd; ++simdidx) {
+                    
+                }
+                j = nsimd * nperel;
+            } else j = 0;
+#endif
+            std::uniform_real_distribution<double> urd;
+            for(j = 0; j < i; ++j) {
+                auto v = std::log(urd(baserng)) / weights[ret[j]];
+                if(v > tmp[i]) {
+                    tmp[i] = v;
+                    rettmp[i] = ret[j];
+                }
+            }
+        }
+        std::copy(rettmp.get(), rettmp.get() + be, ret);
+    } else {
+        for(size_t i = 0; i < be; ++i) {
+            ret[be - i - 1] = rpq.top().second;
+            rpq.pop();
+        }
+    }
+
     std::sort(ret, ret + be);
     return static_cast<int>(be);
 }
+
 template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed) {
+int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement) {
     if(k <= 0) throw std::invalid_argument("k must be > 0");
     wy::WyRand<uint64_t> baserng(seed * seed + 13);
 #ifdef _OPENMP
@@ -1085,17 +1122,50 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
             lastpq.pop();
         }
     }
-    const size_t be = lastpq.size();
-    for(size_t i = 0; i < be; ++i) {
-        ret[i] = lastpq.top().second; lastpq.pop();
-    }
-#else
-    const size_t be = basepq.size();
-    for(size_t i = 0; i < be; ++i) {
-        ret[i] = basepq.top().second;
-        basepq.pop();
-    }
 #endif
+    auto &rpq = OMP_ELSE(lastpq, basepq);
+    const size_t be = rpq.size();
+    if(with_replacement) {
+        // Use cascade sampling
+        auto tmp = std::unique_ptr<float[]>(new float[be]);
+        auto rettmp = std::unique_ptr<uint64_t[]>(new uint64_t[be]);
+        std::copy(ret, ret + be, rettmp.get());
+        if(unlikely(tmp == nullptr)) throw std::bad_alloc();
+        for(size_t i = 0; i < be; ++i) {
+            const auto ind = be - i - 1;
+            ret[ind] = rpq.top().second;
+            tmp[ind] = rpq.top().first;
+            rpq.pop();
+        }
+        // Now, adapt sampling without replacement
+        // to consider replacement
+        OMP_PFOR
+        for(size_t i = 1; i < be; ++i) {
+            size_t j;
+#if 0
+            if(i > nperel) {
+                size_t nsimd = be / nperel;
+                for(size_t simdidx = 0; simdidx < nsimd; ++simdidx) {
+                    
+                }
+                j = nsimd * nperel;
+            } else j = 0;
+#endif
+            std::uniform_real_distribution<float> urd;
+            for(j = 0; j < i; ++j) {
+                auto v = std::log(urd(baserng)) / weights[ret[j]];
+                if(v > tmp[i]) {
+                    tmp[i] = v;
+                    rettmp[i] = ret[j];
+                }
+            }
+        }
+        std::copy(rettmp.get(), rettmp.get() + be, ret);
+    } else {
+        for(size_t i = 0; i < be; ++i) {
+            ret[be - i - 1] = rpq.top().second; rpq.pop();
+        }
+    }
     std::sort(ret, ret + be);
     return static_cast<int>(be);
 }

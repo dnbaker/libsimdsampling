@@ -25,8 +25,8 @@ extern "C" {
 uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed);
 uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed);
 
-int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
-int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
+int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 // Return value: the number of selected elements; min(n, k)
 // uint64_t *ret: pointer to which to write selected elements
 
@@ -61,28 +61,28 @@ static INLINE uint64_t sample(const Container &x, uint64_t seed=0) {
 
 // Sample k
 template<typename FT>
-inline std::vector<uint64_t> sample_k(const FT *weights, size_t n, int k, uint64_t seed=0) {
+inline std::vector<uint64_t> sample_k(const FT *weights, size_t n, int k, uint64_t seed=0, int with_replacement=false) {
     throw std::runtime_error(std::string("SIMD Sampling not implemented for type ") + __PRETTY_FUNCTION__);
 }
-template<> inline std::vector<uint64_t> sample_k<double>(const double *weights, size_t n, int k, uint64_t seed) {
+template<> inline std::vector<uint64_t> sample_k<double>(const double *weights, size_t n, int k, uint64_t seed, int with_replacement) {
     std::vector<uint64_t> ret(k);
-    int kret = dsimd_sample_k(weights, n, k, ret.data(), seed);
+    int kret = dsimd_sample_k(weights, n, k, ret.data(), seed, with_replacement);
     if(kret != k) {
         std::fprintf(stderr, "Return %u vs %u items\n", kret, k);
         ret.resize(kret);
     }
     return ret;
 }
-template<> inline std::vector<uint64_t> sample_k<float>(const float *weights, size_t n, int k, uint64_t seed) {
+template<> inline std::vector<uint64_t> sample_k<float>(const float *weights, size_t n, int k, uint64_t seed, int with_replacement) {
     std::vector<uint64_t> ret(k);
-    int kret = fsimd_sample_k(weights, n, k, ret.data(), seed);
+    int kret = fsimd_sample_k(weights, n, k, ret.data(), seed, with_replacement);
     if(kret != k) ret.resize(kret);
     return ret;
 }
 
 template<typename Container, typename=typename std::enable_if<!std::is_pointer<Container>::value>::type>
-static INLINE std::vector<uint64_t> sample_k(const Container &x, int k, uint64_t seed=0) {
-    return sample_k(x.data(), x.size(), k, seed);
+static INLINE std::vector<uint64_t> sample_k(const Container &x, int k, uint64_t seed=0, int with_replacement=false) {
+    return sample_k(x.data(), x.size(), k, seed, with_replacement);
 }
 
 } // namespace reservoir_simd
