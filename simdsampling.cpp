@@ -8,6 +8,7 @@
 #include "sleef.h"
 #include <limits>
 #include <queue>
+#include <memory>
 
 #if __AVX512F__ || __AVX2__
 #include "simdpcg32.h"
@@ -59,9 +60,9 @@ uint64_t float_simd_sampling_fmt(const float *weights, size_t n, uint64_t seed);
 
 // Multiple-sample
 template<LoadFormat aln>
-int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
+int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
+int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 
 extern "C" {
 uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed)
@@ -79,25 +80,25 @@ uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed)
 }
 } // extern "C" for the C-api
 
-int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed)
+int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
 {
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
-        ? double_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed)
-        : double_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed);
+        ? double_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed, with_replacement)
+        : double_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed, with_replacement);
 }
 
-int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed)
+int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
 {
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
-        ? float_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed)
-        : float_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed);
+        ? float_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed, with_replacement)
+        : float_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed, with_replacement);
 }
 
 
 template<LoadFormat aln>
-int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
+int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed);
+int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 
 #ifdef __AVX512F__
 INLINE __m512 load(const float *ptr, std::false_type) {
@@ -670,7 +671,7 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
 };
 
 template<LoadFormat aln>
-int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed)
+int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
 {
     if(k <= 0) throw std::invalid_argument("k must be > 0");
     wy::WyRand<uint64_t> baserng(seed * seed + 13);
@@ -781,14 +782,33 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
     constexpr size_t nperel = sizeof(__m256d) / sizeof(double);
     const size_t e = (n / nperel);
     __m256d vmaxv = _mm256_set1_pd(-std::numeric_limits<double>::max());
+    using simdpcg_t = avx256_pcg32_random_t;
+    auto init = [&](simdpcg_t &x) {
+        x.state = _mm256_set_epi64x(baserng(), baserng(), baserng(), baserng());
+        x.inc = _mm256_set_epi64x(baserng() | 1u, baserng() | 1u, baserng() | 1u, baserng() | 1u);
+        x.pcg32_mult_l = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) & 0xffffffff);
+        x.pcg32_mult_h = _mm256_set1_epi64x(UINT64_C(0x5851f42d4c957f2d) >> 32);
+    };
+    simdpcg_t baserngstate;
+#ifdef _OPENMP
+    simdpcg_t *rngstates = &baserngstate;
+    if(nt > 1) {
+        if(posix_memalign((void **)&rngstates, sizeof(__m512) / sizeof(char), sizeof(*rngstates) * nt))
+            throw std::bad_alloc();
+        for(int i = 0; i < nt; ++i) init(rngstates[i]);
+    } else
+#endif
+    {
+        init(baserngstate);
+    }
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
         OMP_ONLY(const int tid = omp_get_thread_num();)
-        auto &rng = OMP_ELSE(rngs[tid],
-                             baserng);
+        auto &rng = OMP_ELSE(rngstates[tid],
+                             baserngstate);
         pq_t<double> &pq = OMP_ELSE(pqs[tid],
                                     basepq);
-        __m256i v = _mm256_set_epi64x(rng(), rng(), rng(), rng());
+        __m256i v = _mm256_set_m128i(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng));
         auto v2 = _mm256_or_si256(_mm256_srli_epi64(v, 12), _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)));
         auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
         auto v4 = _mm256_mul_pd(v3, _mm256_set1_pd(pdmul));
@@ -883,22 +903,122 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
         }
         pqs.pop_back();
     }
-    const size_t be = lastpq.size();
-    for(size_t i = 0; i < be; ++i) {
-        ret[i] = lastpq.top().second; lastpq.pop();
-    }
-#else
-    const size_t be = basepq.size();
-    for(size_t i = 0; i < be; ++i) {
-        ret[i] = basepq.top().second;
-        basepq.pop();
-    }
 #endif
+    auto &rpq = OMP_ELSE(lastpq, basepq);
+    const size_t be = rpq.size();
+    if(with_replacement) {
+        // Use cascade sampling
+        auto tmp = std::unique_ptr<double[]>(new double[be]);
+        auto tmpw = std::unique_ptr<double[]>(new double[be]);
+        auto rettmp = std::unique_ptr<uint64_t[]>(new uint64_t[be]);
+        if(unlikely(tmp == nullptr)) throw std::bad_alloc();
+        for(size_t i = 0; i < be; ++i) {
+            const auto ind = be - i - 1;
+            ret[ind] = rpq.top().second;
+            tmp[ind] = rpq.top().first;
+            tmpw[ind] = ret[ind];
+            rpq.pop();
+        }
+        std::copy(ret, ret + be, rettmp.get());
+        // Now, adapt sampling without replacement
+        // to consider replacement
+        OMP_PFOR
+        for(size_t i = 1; i < be; ++i) {
+            size_t j = 0;
+            OMP_ONLY(const int tid = omp_get_thread_num();)
+#if __AVX2__ || __AVX512F__
+            if(i > nperel * 4) {
+                auto rngptr = OMP_ELSE(rngstates + tid, &baserngstate);
+                size_t nsimd = be / nperel;
+#ifdef __AVX512F__
+                auto vmaxv = _mm512_set1_pd(tmp[i]);
+#else
+                auto vmaxv = _mm256_set1_pd(tmp[i]);
+#endif
+                for(size_t simdidx = 0; simdidx < nsimd; ++simdidx) {
+#if __AVX512F__
+                    __m512i v =
+#if __AVX512DQ__
+                    avx512bis_pcg32_random_r(rngptr);
+#else
+                    pack_result(avx2_pcg32_random_r(rngptr), avx2_pcg32_random_r(rngptr));
+                    //pack_result(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng));
+#endif
+                    const __m512d v2 =
+#ifdef __AVX512DQ__
+                        _mm512_mul_pd(_mm512_cvtepi64_pd(_mm512_srli_epi64(v, 12)), _mm512_set1_pd(pdmul));
+#else
+                        _mm512_mul_pd(_mm512_sub_pd(_mm512_castsi512_pd(_mm512_or_si512(_mm512_srli_epi64(v, 12), _mm512_castpd_si512(_mm512_set1_pd(0x0010000000000000)))), _mm512_set1_pd(0x0010000000000000)),  _mm512_set1_pd(pdmul));
+#endif
+                    // Shift right by 12, convert from ints to doubles, and then multiply by 2^-52
+                    // resulting in uniform [0, 1] sampling
+
+                    const __m512d v3 = Sleef_logd8_u35(v2);
+                    // Log-transform the [0, 1] sampling
+                    __m512d ov = load<UNALIGNED>((const double *)&tmpw[simdidx * nperel]);
+                    auto divv = _mm512_div_pd(v3, ov);
+                    auto cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ);
+                    if(cmpmask) {
+                        for(;;) {
+                            auto ind = ctz(cmpmask);
+                            tmp[i] = divv[ind];
+                            rettmp[i] = ret[ind + simdidx * nperel];
+                            if((cmpmask ^= (1 << ind)) == 0) {
+                                vmaxv = _mm512_set1_pd(tmp[i]);
+                                break;
+                            }
+                        }
+                    }
+#elif __AVX2__
+                    __m256i v = _mm256_set_m128i(avx256_pcg32_random_r(rngptr), avx256_pcg32_random_r(rngptr));
+                    auto v2 = _mm256_or_si256(_mm256_srli_epi64(v, 12), _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)));
+                    auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
+                    auto v4 = _mm256_mul_pd(v3, _mm256_set1_pd(pdmul));
+                    auto v5 = Sleef_logd4_u35(v4);
+                    __m256d ov = load<UNALIGNED>((const double *)&tmpw[simdidx * nperel]);
+                    auto divv = _mm256_div_pd(v5, ov);
+                    auto cmp = _mm256_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
+                    auto cmpmask = _mm256_movemask_pd(cmp);
+                    if(cmpmask) {
+                        for(;;) {
+                            auto ind = ctz(cmpmask);
+                            if(divv[ind] > tmp[i])
+                                tmp[i] = divv[ind], rettmp[i] = ind + simdidx * nperel;
+                            cmpmask ^= (1 << ind);
+                            if(!cmpmask) {
+                                vmaxv = _mm256_set1_pd(tmp[i]);
+                                break;
+                            }
+                        }
+                    }
+#endif
+                }
+                j = nsimd * nperel;
+            } else j = 0;
+#endif
+            std::uniform_real_distribution<double> urd;
+            for(; j < i; ++j) {
+                auto v = std::log(urd(baserng)) / weights[ret[j]];
+                if(v > tmp[i]) {
+                    tmp[i] = v;
+                    rettmp[i] = ret[j];
+                }
+            }
+        }
+        std::copy(rettmp.get(), rettmp.get() + be, ret);
+    } else {
+        for(size_t i = 0; i < be; ++i) {
+            ret[be - i - 1] = rpq.top().second;
+            rpq.pop();
+        }
+    }
+
     std::sort(ret, ret + be);
     return static_cast<int>(be);
 }
+
 template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed) {
+int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement) {
     if(k <= 0) throw std::invalid_argument("k must be > 0");
     wy::WyRand<uint64_t> baserng(seed * seed + 13);
 #ifdef _OPENMP
@@ -1085,20 +1205,112 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
             lastpq.pop();
         }
     }
-    const size_t be = lastpq.size();
-    for(size_t i = 0; i < be; ++i) {
-        ret[i] = lastpq.top().second; lastpq.pop();
-    }
-#else
-    const size_t be = basepq.size();
-    for(size_t i = 0; i < be; ++i) {
-        ret[i] = basepq.top().second;
-        basepq.pop();
-    }
 #endif
+    auto &rpq = OMP_ELSE(lastpq, basepq);
+    const size_t be = rpq.size();
+    if(with_replacement) {
+        // Use cascade sampling
+        auto tmp = std::unique_ptr<float[]>(new float[be]);
+        auto tmpw = std::unique_ptr<float[]>(new float[be]);
+        auto rettmp = std::unique_ptr<uint64_t[]>(new uint64_t[be]);
+        if(unlikely(tmp == nullptr)) throw std::bad_alloc();
+        for(size_t i = 0; i < be; ++i) {
+            const auto ind = be - i - 1;
+            auto refind = rpq.top().second;
+            ret[ind] = refind;
+            tmp[ind] = rpq.top().first;
+            tmpw[ind] = weights[refind];
+            rpq.pop();
+        }
+        std::copy(ret, ret + be, rettmp.get());
+        // Now, adapt sampling without replacement
+        // to consider replacement
+        OMP_PFOR
+        for(size_t i = 1; i < be; ++i) {
+            size_t j = 0;
+#if __AVX2__ || __AVX512F__
+            if(i > nperel * 4) {
+                OMP_ONLY(const int tid = omp_get_thread_num();)
+                auto rngptr = OMP_ELSE(rngstates + tid, &baserngstate);
+                size_t nsimd = i / nperel;
+                for(size_t simdidx = 0; simdidx < nsimd; ++simdidx) {
+#if __AVX512F__
+                __m512i v =
+#if __AVX512DQ__
+                            _mm512_srli_epi32(avx512bis_pcg32_random_r(rngptr), 3);
+#else
+                            _mm512_srli_epi32(pack_result(avx2_pcg32_random_r(rngptr), avx2_pcg32_random_r(rngptr)), 3);
+#endif
+                __m512 v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
+                __m512 v5 = Sleef_logf16_u35(v4);
+                __m512 lv = load<UNALIGNED>((const float *)&tmpw[simdidx * nperel]);
+                auto divv = _mm512_div_ps(v5, lv);
+                auto cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ);
+                if(cmpmask) {
+                    for(;;) {
+                        auto ind = ctz(cmpmask);
+                        if(divv[ind] > tmp[i])
+                            tmp[i] = divv[ind], rettmp[i] = ind + simdidx * nperel;
+                        cmpmask ^= (1 << ind);
+                        if(!cmpmask) {
+                            vmaxv = _mm512_set1_ps(tmp[i]);
+                            break;
+                        }
+                    }
+                }
+#else
+#if USE_AVX256_RNG
+                __m256i v = _mm256_srli_epi32(_mm256_inserti128_si256(_mm256_castsi128_si256(avx256_pcg32_random_r(rngptr)), avx256_pcg32_random_r(rngptr), 1), 3);
+#else
+                __m256i v = _mm256_srli_epi32(avx2_pcg32_random_r(rngptr), 3);
+#endif
+                auto vmaxv = _mm256_set1_ps(tmp[i]);
+                auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
+                auto v3 = Sleef_logf8_u35(v2);
+                __m256 ov6 = load<UNALIGNED>((const float *) &tmpw[simdidx * nperel]);
+                __m256 divv = _mm256_div_ps(v3, ov6);
+                auto cmp = _mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
+                auto cmpmask = _mm256_movemask_ps(cmp);
+                if(cmpmask) {
+                    for(;;) {
+                        auto ind = ctz(cmpmask);
+                        if(divv[ind] > tmp[i]) {
+                            tmp[i] = divv[ind], rettmp[i] = ind + simdidx * nperel;
+                        }
+                        cmpmask ^= (1 << ind);
+                        if(!cmpmask) {
+                            vmaxv = _mm256_set1_ps(tmp[i]);
+                            break;
+                        }
+                    }
+                }
+#endif
+                }
+                j = nsimd * nperel;
+            } else j = 0;
+#endif
+            std::uniform_real_distribution<float> urd;
+            for(; j < i; ++j) {
+                auto v = std::log(urd(baserng)) / weights[ret[j]];
+                if(v > tmp[i]) {
+                    tmp[i] = v;
+                    rettmp[i] = ret[j];
+                }
+            }
+        }
+        for(size_t i = 0; i < be; ++i) {
+            ret[i] = rettmp[i];
+        }
+    } else {
+        for(size_t i = 0; i < be; ++i) {
+            ret[be - i - 1] = rpq.top().second; rpq.pop();
+        }
+    }
     std::sort(ret, ret + be);
     return static_cast<int>(be);
 }
+
+extern "C" {
 
 int simd_sample_get_version() {
     return LIB_SIMDSAMPLING_VERSION;
@@ -1111,4 +1323,6 @@ int simd_sample_get_minor_version() {
 }
 int simd_sample_get_revision_version() {
     return LIB_SIMDSAMPLING_REVISION;
+}
+
 }

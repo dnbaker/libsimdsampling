@@ -66,6 +66,10 @@ PYBIND11_MODULE(simdsampling, m) {
             default: throw std::invalid_argument("bad format");
         }
         return ret;
-    });
+    })
+    .def("get_version", []() {return simd_sample_get_version();})
+    .def("get_major_version", []() {return simd_sample_get_major_version();})
+    .def("get_minor_version", []() {return simd_sample_get_minor_version();})
+    .def("get_revision_version", []() {return simd_sample_get_revision_version();});
     m.doc() = "Python bindings for libsimdsampling; sample 1 or k items from a weighted probability distribution or compute vectorized/parallelized argmin/max";
 }
