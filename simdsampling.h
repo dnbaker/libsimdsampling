@@ -85,6 +85,17 @@ static INLINE std::vector<uint64_t> sample_k(const Container &x, int k, uint64_t
     return sample_k(x.data(), x.size(), k, seed, with_replacement);
 }
 
+template<typename T>
+int sample_k(const T *weights, size_t n, int k, uint64_t *ret, uint64_t seed=0, int with_replacement=false) {
+    throw std::runtime_error("Not Implemented");
+}
+template<> int sample_k<double>(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement) {
+    return dsimd_sample_k(weights, n, k, ret, seed, with_replacement);
+}
+template<> int sample_k<float>(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement) {
+    return fsimd_sample_k(weights, n, k, ret, seed, with_replacement);
+}
+
 } // namespace reservoir_simd
 
 #endif // ifdef __cplusplus
