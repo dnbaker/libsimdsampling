@@ -13,6 +13,7 @@
 #if __AVX512F__ || __AVX2__
 #include "simdpcg32.h"
 #endif
+#include "reservoir.h"
 
 
 #ifdef __AVX512F__
@@ -59,46 +60,105 @@ template<LoadFormat aln>
 uint64_t float_simd_sampling_fmt(const float *weights, size_t n, uint64_t seed);
 
 // Multiple-sample
-template<LoadFormat aln>
-int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
-template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+template<LoadFormat aln> int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+template<LoadFormat aln> int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+template<LoadFormat aln> int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+template<LoadFormat aln> int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 
 extern "C" {
-uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed)
+uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed, enum SampleFmt fmt)
 {
+    if(fmt & USE_EXPONENTIAL_SKIPS) {
+        int nt = 1;
+#ifdef _OPENMP
+        #pragma omp parallel 
+        {
+            nt = omp_get_num_threads();
+        }
+#endif
+        return DOGS::CalaverasReservoirSampler<uint64_t>::parallel_sample1(weights, weights + n, nt, seed);
+    }
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
         ? double_simd_sampling_fmt<UNALIGNED>(weights, n, seed)
         : double_simd_sampling_fmt<ALIGNED>(weights, n, seed);
 }
 
-uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed)
+uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed, SampleFmt fmt)
 {
+    if(fmt & USE_EXPONENTIAL_SKIPS) {
+        int nt = 1;
+#ifdef _OPENMP
+        #pragma omp parallel 
+        {
+            nt = omp_get_num_threads();
+        }
+#endif
+        return DOGS::CalaverasReservoirSampler<uint64_t>::parallel_sample1(weights, weights + n, nt, seed);
+    }
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
         ? float_simd_sampling_fmt<UNALIGNED>(weights, n, seed)
         : float_simd_sampling_fmt<ALIGNED>(weights, n, seed);
 }
-} // extern "C" for the C-api
 
-int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
+int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt)
 {
+    if(k <= 0) throw std::invalid_argument(std::string("k must be > 0 [") + std::to_string(k) + "]\n");
+    if(fmt & USE_EXPONENTIAL_SKIPS) {
+        if(fmt & WITH_REPLACEMENT) {
+            std::fprintf(stderr, "Warning: exponential skips with replacement not implemented. Returning without replacement.\n");
+        }
+        int nt = 1;
+#ifdef _OPENMP
+        #pragma omp parallel 
+        {
+            nt = omp_get_num_threads();
+        }
+#endif
+        auto container = DOGS::CalaverasReservoirSampler<uint64_t>::parallel_sample_weights(weights, weights + n, k, nt, seed);
+        if(container.size() != unsigned(k)) throw std::runtime_error(std::string("container expected ") + std::to_string(k) + ", but found " + std::to_string(container.size()));
+        std::sort(container.begin(), container.end());
+        auto rp = ret;
+        for(const auto &pair: container)
+            *rp++ = pair.second;
+        std::sort(ret, rp);
+        return k;
+    }
+    const bool with_replacement = fmt & WITH_REPLACEMENT;
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
         ? double_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed, with_replacement)
         : double_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed, with_replacement);
 }
 
-int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
+int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt)
 {
+    if(k <= 0) throw std::invalid_argument(std::string("k must be > 0 [") + std::to_string(k) + "]\n");
+    if(fmt & USE_EXPONENTIAL_SKIPS) {
+        if(fmt & WITH_REPLACEMENT) {
+            std::fprintf(stderr, "Warning: exponential skips with replacement not implemented. Returning without replacement.\n");
+        }
+        int nt = 1;
+#ifdef _OPENMP
+        #pragma omp parallel 
+        {
+            nt = omp_get_num_threads();
+        }
+#endif
+        auto container = DOGS::CalaverasReservoirSampler<uint64_t>::parallel_sample_weights(weights, weights + n, k, nt, seed);
+        if(container.size() != unsigned(k)) throw std::runtime_error(std::string("container expected ") + std::to_string(k) + ", but found " + std::to_string(container.size()));
+        auto rp = ret;
+        for(const auto &pair: container)
+            *rp++ = pair.second;
+        std::sort(ret, rp);
+        return k;
+    }
+    const bool with_replacement = fmt & WITH_REPLACEMENT;
     return reinterpret_cast<uint64_t>(weights) % SIMD_SAMPLING_ALIGNMENT
         ? float_simd_sample_k_fmt<UNALIGNED>(weights, n, k, ret, seed, with_replacement)
         : float_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed, with_replacement);
 }
 
 
-template<LoadFormat aln>
-int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
-template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+} // extern "C" for the C-api
 
 #ifdef __AVX512F__
 INLINE __m512 load(const float *ptr, std::false_type) {
@@ -899,10 +959,11 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
         while(p.size()) {
             lastpq.push(p.top());
             p.pop();
-            lastpq.pop();
+            if(lastpq.size() > unsigned(k)) lastpq.pop();
         }
         pqs.pop_back();
     }
+    DBG_ONLY(std::fprintf(stderr, "lastpq has %zu items (expecting k=%d)\n", lastpq.size(), k);)
 #endif
     auto &rpq = OMP_ELSE(lastpq, basepq);
     const size_t be = rpq.size();
@@ -1018,7 +1079,8 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
 }
 
 template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement) {
+int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
+{
     if(k <= 0) throw std::invalid_argument("k must be > 0");
     wy::WyRand<uint64_t> baserng(seed * seed + 13);
 #ifdef _OPENMP
@@ -1197,14 +1259,15 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
     // We have to merge the priority queues
     // This could be parallelized, but let's assume k is small
     auto &lastpq = pqs[0];
-    for(size_t i = 1; i < pqs.size(); ++i) {
-        auto &p = pqs[i];
+    while(pqs.size() > 1) {
+        auto &p = pqs.back();
         while(p.size()) {
             lastpq.push(p.top());
             p.pop();
-            lastpq.pop();
+            if(lastpq.size() > unsigned(k)) lastpq.pop();
         }
     }
+    DBG_ONLY(std::fprintf(stderr, "lastpq has %zu items (expecting k=%d)\n", lastpq.size(), k);)
 #endif
     auto &rpq = OMP_ELSE(lastpq, basepq);
     const size_t be = rpq.size();
@@ -1308,6 +1371,18 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
     }
     std::sort(ret, ret + be);
     return static_cast<int>(be);
+}
+
+
+namespace reservoir_simd {
+
+template<> int sample_k<double>(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt) {
+    return dsimd_sample_k(weights, n, k, ret, seed, fmt);
+}
+template<> int sample_k<float>(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt) {
+    return fsimd_sample_k(weights, n, k, ret, seed, fmt);
+}
+
 }
 
 extern "C" {

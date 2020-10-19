@@ -32,10 +32,9 @@ uint64_t dargmax(const double *weights, size_t n);
 namespace reservoir_simd {
 template<typename T>
 static inline uint64_t argsel(const T *weights, size_t n, ArgReduction ar) {
-    if(ar == ARGMIN) {
-        return std::min_element(weights, weights + n) - weights;
-    }
-    return std::max_element(weights, weights + n) - weights;
+    return (ar == ARGMIN ? std::min_element(weights, weights + n)
+                         : std::max_element(weights, weights + n))
+           - weights;
 }
 template<> uint64_t argsel<double>(const double *weights, size_t n, ArgReduction ar) {
     return dargsel(weights, n, ar);

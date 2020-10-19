@@ -26,15 +26,19 @@ const std::vector<uint64_t> selected = reservoir_simd::sample_k(data.data(), dat
 
 Simply include the same header and link as using C++; however, you will need to call unqualified names;
 
+Fmt determines whether to sample with replacement (not possible for k = 1)
+and whether to use dense SIMD computation or use exponential skips instead.
+
 ```
 size_t n = 10000;
 int k = 25;
 uint64_t seed = 0;
 double *data = malloc(sizeof(double) * n);
 float *fdata = malloc(sizeof(float) * n);
+enum SampleFmt fmt = 0;
 // Initialization here...
-uint64_t selected_point = dsimd_sample(data, n, seed);
-uint64_t float_selected_point = fsimd_sample(data, n, seed);
+uint64_t selected_point = dsimd_sample(data, n, seed, fmt);
+uint64_t float_selected_point = fsimd_sample(data, n, seed, fmt);
 ```
 
 It's more complicated to sample k points without replacement; one must pre-allocate a buffer of 64-bit integers,
