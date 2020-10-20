@@ -32,12 +32,12 @@ int main(int argc, char **argv) {
         ptr[i] = 1.;
     }
     auto sel = reservoir_simd::sample_k(ptr, n, k, seed);
-    auto sel2 = reservoir_simd::sample_k(ptr, n, k * 10, seed + 1, true);
+    auto sel2 = reservoir_simd::sample_k(ptr, n, k * 10, seed + 1, WITH_REPLACEMENT);
     for(const auto v: sel) std::fprintf(stderr, "%u\n", (int)v);
     for(int i = 0; i < n * 2; ++i)
         ((float *)ptr)[i] = 1.;
     auto sel3 = reservoir_simd::sample_k((float *)ptr, n * 2, k, seed);
-    auto sel4 = reservoir_simd::sample_k((float *)ptr, n * 2, k * 10, seed + 1, true);
+    auto sel4 = reservoir_simd::sample_k((float *)ptr, n * 2, k * 10, seed + 1, WITH_REPLACEMENT);
     std::map<uint64_t, uint32_t> m, m2;
 #if 1
     for(const auto v: sel2) {

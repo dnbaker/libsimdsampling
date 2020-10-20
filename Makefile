@@ -9,8 +9,8 @@ CMAKE?=cmake
 
 WARNINGS=-Wall -Wextra -Wno-ignored-qualifiers -Wno-unused-function
 EXTRA?=
-CFLAGS+=-march=native -O3 -I. $(WARNINGS) $(EXTRA)
-CXXFLAGS+=-march=native -O3 -I. -std=c++11 $(WARNINGS) $(EXTRA)
+CFLAGS+=-march=native -O3 -I. $(WARNINGS) $(EXTRA) -pthread
+CXXFLAGS+=-march=native -O3 -I. -std=c++11 $(WARNINGS) $(EXTRA) -pthread
 
 ifdef SLEEF_DIR
 CXXFLAGS+= -L$(SLEEF_DIR)/lib
