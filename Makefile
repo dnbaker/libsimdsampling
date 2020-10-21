@@ -29,18 +29,18 @@ SLEEFARG=libsleef.a
 
 all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so libsimdsampling-st.a \
         test test-st ctest ctest-st ftest ftest-st ktest ktest-st \
-     libargminmax.so libargminmax-st.so libargminmax.a libargminmax-st.a \
-     argmintest argmintest-st cargredtest cargredtest-st
+     libargminmax.so libargminmax.a \
+     argmintest cargredtest
 
-DYNLIBS: libsimdsampling.so libsimdsampling-st.so libargminmax.so libargminmax-st.so
-STATICLIBS: libsimdsampling.a libsimdsampling-st.a libargminmax.a libargminmax-st.a
+DYNLIBS: libsimdsampling.so libsimdsampling-st.so libargminmax.so
+STATICLIBS: libsimdsampling.a libsimdsampling-st.a libargminmax.a
 
 
 libs: DYNLIBS STATICLIBS
 
 run_tests: all
 	./test && ./test-st && ./ctest && ./ctest-st && ./ftest && ./ftest-st && ./ktest && ./ktest-st \
-           && ./argmintest && ./argmintest-st && ./cargredtest && ./cargredtest-st
+           && ./argmintest  && ./cargredtest
 
 simdsampling.cpp: simdsampling.h
 
@@ -50,13 +50,10 @@ simdsampling-st.o: simdsampling.cpp libsleef-dyn
 simdsampling.o: simdsampling.cpp libsleef-dyn
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp -lsleef
 
-libsimdsampling-st.a: simdsampling-st.o argminmax-st.o $(SLEEFARG)
-	$(AR) rcs $@ $< argminmax-st.o $(SLEEFARG)
+libsimdsampling-st.a: simdsampling-st.o argminmax.o $(SLEEFARG)
+	$(AR) rcs $@ $< argminmax.o $(SLEEFARG)
 
 libargminmax.a: argminmax.o
-	$(AR) rcs $@ $<
-
-libargminmax-st.a: argminmax-st.o
 	$(AR) rcs $@ $<
 
 libsimdsampling.a: simdsampling.o argminmax.o libsleef.a
@@ -65,20 +62,14 @@ libsimdsampling.a: simdsampling.o argminmax.o libsleef.a
 argminmax.o: argminmax.cpp
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp -lsleef
 
-argminmax-st.o: argminmax.cpp
-	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -lsleef
-
 libargminmax.so: argminmax.o
 	$(CXX) $(CXXFLAGS) -shared -o $@ $< -fopenmp -fPIC
-
-libargminmax-st.so: argminmax-st.o
-	$(CXX) $(CXXFLAGS) -shared -o $@ $< -fPIC
 
 libsimdsampling.so: simdsampling.o argminmax.o
 	$(CXX) $(CXXFLAGS) -shared -o $@ $< argminmax.o -lsleef -fopenmp -fPIC
 
-libsimdsampling-st.so: simdsampling-st.o argminmax-st.o
-	$(CXX) $(CXXFLAGS) -shared -o $@ $< argminmax-st.o -lsleef -fPIC -lsleef
+libsimdsampling-st.so: simdsampling-st.o argminmax.o
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< argminmax.o -lsleef -fPIC -lsleef -fopenmp
 
 ftest: test.cpp libsimdsampling.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp -DFLOAT_TYPE=float
@@ -106,10 +97,6 @@ ktest-st: ktest.cpp libsimdsampling-st.so
 
 argmintest: argmintest.cpp libargminmax.so
 	$(CXX) $(CXXFLAGS) -L. -largminmax $< -o $@ -fopenmp
-argmintest-st: argmintest.cpp libargminmax-st.so
-	$(CXX) $(CXXFLAGS) -L. -largminmax-st $< -o $@
-cargredtest-st: argmintest.cpp libargminmax-st.so
-	$(CXX) $(CXXFLAGS) -L. -largminmax-st $< -o $@ -fopenmp
 cargredtest: argmintest.cpp libargminmax.so
 	$(CXX) $(CXXFLAGS) -L. -largminmax $< -o $@
 
@@ -130,5 +117,5 @@ libsleef-dyn: sleef/dynbuild
 	ls libsleef*so 2>/dev/null || ls libsleef*dylib 2>/dev/null || (cd sleef/dynbuild && echo "about to cmake " &&  $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && (cp lib/libsleef*dylib ../.. 2>/dev/null || cp lib/libsleef*so ../.. 2>/dev/null))
 clean:
 	rm -f libsimdsampling.a simdsampling.o libsimdsampling.so libsimdsampling-st.so libsimdsampling-st.a test test-st simdsampling-st.o \
-        libargminmax.so libargminmax-st.so argminmax.o argmintest argmintest-st cargredtest cargredtest-st \
-        ftest ftest-st ktest ktest-st ctest ctest-st argminmax-st.o libargminmax.a libargminmax-st.a
+        libargminmax.so argminmax.o argmintest argmintest-st cargredtest cargredtest-st \
+        ftest ftest-st ktest ktest-st ctest ctest-st libargminmax.a

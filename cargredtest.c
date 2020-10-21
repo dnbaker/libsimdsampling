@@ -33,5 +33,10 @@ int main() {
     fprintf(stderr, "found maxind %zu, found minind %zu\n", fargmax, fargmin);
     assert(randmaxind == fargmax);
     assert(randminind == fargmin);
+    const int k = 10;
+    uint64_t *ret = malloc(sizeof(uint64_t) * k);
+    fargsel_k(ptr, nf, k, ARGMIN, ret);
+    dargsel_k(v, nf, k, ARGMIN, ret);
+    free(ret);
     free(v);
 }
