@@ -30,7 +30,7 @@ SLEEFARG=libsleef.a
 all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so libsimdsampling-st.a \
         test test-st ctest ctest-st ftest ftest-st ktest ktest-st \
      libargminmax.so libargminmax.a \
-     argmintest argmintest-st cargredtest cargredtest-st
+     argmintest cargredtest
 
 DYNLIBS: libsimdsampling.so libsimdsampling-st.so libargminmax.so
 STATICLIBS: libsimdsampling.a libsimdsampling-st.a libargminmax.a
@@ -40,7 +40,7 @@ libs: DYNLIBS STATICLIBS
 
 run_tests: all
 	./test && ./test-st && ./ctest && ./ctest-st && ./ftest && ./ftest-st && ./ktest && ./ktest-st \
-           && ./argmintest && ./argmintest-st && ./cargredtest && ./cargredtest-st
+           && ./argmintest  && ./cargredtest
 
 simdsampling.cpp: simdsampling.h
 
@@ -69,7 +69,7 @@ libsimdsampling.so: simdsampling.o argminmax.o
 	$(CXX) $(CXXFLAGS) -shared -o $@ $< argminmax.o -lsleef -fopenmp -fPIC
 
 libsimdsampling-st.so: simdsampling-st.o argminmax.o
-	$(CXX) $(CXXFLAGS) -shared -o $@ $< argminmax.o -lsleef -fPIC -lsleef
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< argminmax.o -lsleef -fPIC -lsleef -fopenmp
 
 ftest: test.cpp libsimdsampling.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp -DFLOAT_TYPE=float
@@ -96,10 +96,6 @@ ktest-st: ktest.cpp libsimdsampling-st.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-st $< -o $@
 
 argmintest: argmintest.cpp libargminmax.so
-	$(CXX) $(CXXFLAGS) -L. -largminmax $< -o $@ -fopenmp
-argmintest-st: argmintest.cpp libargminmax.so
-	$(CXX) $(CXXFLAGS) -L. -largminmax $< -o $@
-cargredtest-st: argmintest.cpp libargminmax.so
 	$(CXX) $(CXXFLAGS) -L. -largminmax $< -o $@ -fopenmp
 cargredtest: argmintest.cpp libargminmax.so
 	$(CXX) $(CXXFLAGS) -L. -largminmax $< -o $@

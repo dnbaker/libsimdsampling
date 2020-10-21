@@ -252,6 +252,14 @@ ptrdiff_t fargsel_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *re
     return rv;
 }
 
+ptrdiff_t dargmax_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
+    if(mt) return dargmax_k_mt(weights, n, k, ret);
+    else   return dargmax_k_st(weights, n, k, ret);
+}
+ptrdiff_t fargmax_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
+    if(mt) return fargmax_k_mt(weights, n, k, ret);
+    else   return fargmax_k_st(weights, n, k, ret);
+}
 ptrdiff_t dargmin_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
     if(mt) return dargmin_k_mt(weights, n, k, ret);
     else   return dargmin_k_st(weights, n, k, ret);
@@ -261,6 +269,35 @@ ptrdiff_t fargmin_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, 
     else   return fargmin_k_st(weights, n, k, ret);
 }
 
+ptrdiff_t fargmax_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
+    ptrdiff_t rv;
+    if(aligned) rv = float_argsel_k_fmt<ALIGNED, ARGMIN, false>(weights, n, k, ret);
+    else        rv = float_argsel_k_fmt<UNALIGNED, ARGMIN, false>(weights, n, k, ret);
+    return rv;
+}
+ptrdiff_t dargmax_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
+    ptrdiff_t rv;
+    if(aligned) rv = double_argsel_k_fmt<ALIGNED, ARGMIN, false>(weights, n, k, ret);
+    else        rv = double_argsel_k_fmt<UNALIGNED, ARGMIN, false>(weights, n, k, ret);
+    return rv;
+}
+ptrdiff_t fargmax_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
+    ptrdiff_t rv;
+    if(aligned) rv = float_argsel_k_fmt<ALIGNED, ARGMIN, true>(weights, n, k, ret);
+    else        rv = float_argsel_k_fmt<UNALIGNED, ARGMIN, true>(weights, n, k, ret);
+    return rv;
+}
+
+ptrdiff_t dargmax_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+    const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
+    ptrdiff_t rv;
+    if(aligned) rv = double_argsel_k_fmt<ALIGNED, ARGMIN, true>(weights, n, k, ret);
+    else        rv = double_argsel_k_fmt<UNALIGNED, ARGMIN, true>(weights, n, k, ret);
+    return rv;
+}
 ptrdiff_t fargmin_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
