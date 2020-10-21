@@ -14,8 +14,8 @@ int main(int argc, char **argv) {
     uint32_t minind = 17371;
     v[maxind] = 122323.;
     v[minind] = -133000;
-    size_t argmin = dargsel(v.data(), v.size(), ARGMIN);
-    size_t argmax = dargsel(v.data(), v.size(), ARGMAX);
+    size_t argmin = dargsel(v.data(), v.size(), ARGMIN, true);
+    size_t argmax = dargsel(v.data(), v.size(), ARGMAX, true);
     assert(argmax == maxind);
     assert(argmin == minind);
     std::fprintf(stderr, "argmax %zu, expected %u\n", argmax, maxind);
@@ -30,8 +30,8 @@ int main(int argc, char **argv) {
     ptr[randmaxind] = 122323.;
     ptr[randminind] = -133000;
     std::fprintf(stderr, "randmaxind %u, randminind %u\n", randmaxind, randminind);
-    size_t fargmin = fargsel(ptr, nf, ARGMIN);
-    size_t fargmax = fargsel(ptr, nf, ARGMAX);
+    size_t fargmin = fargsel(ptr, nf, ARGMIN, true);
+    size_t fargmax = fargsel(ptr, nf, ARGMAX, true);
     std::fprintf(stderr, "found maxind %zu, found minind %zu\n", fargmax, fargmin);
     assert(randmaxind == fargmax);
     assert(randminind == fargmin);

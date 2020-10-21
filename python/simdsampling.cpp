@@ -45,28 +45,64 @@ PYBIND11_MODULE(simdsampling, m) {
         }
         return ret;
     }, py::arg("data"), py::arg("seed") = 0, py::arg("k") = 1)
-    .def("argmin", [](py::array data) {
+    .def("argmin", [](py::array data, int multithread, Py_ssize_t k) -> py::object {
         auto inf = data.request();
         if(inf.format.size() != 1) throw std::invalid_argument("bad format");
-        Py_ssize_t ret;
+        if(k == 1) {
+            Py_ssize_t ret;
+            switch(inf.format.front()) {
+                case 'd': ret = dargmin((double *)inf.ptr, inf.size, multithread); break;
+                case 'f': ret = fargmin((float *)inf.ptr, inf.size, multithread);  break;
+                default: throw std::invalid_argument("bad format");
+            }
+            return py::int_(ret);
+        }
+        py::array ret(py::dtype(size2dtype(inf.size)), std::vector<Py_ssize_t>{k});
+        std::vector<uint64_t> tmp(k);
+        auto retinf = ret.request();
         switch(inf.format.front()) {
-            case 'd': ret = dargmin((double *)inf.ptr, inf.size); break;
-            case 'f': ret = fargmin((float *)inf.ptr, inf.size);  break;
-            default: throw std::invalid_argument("bad format");
+            case 'd': dargmin_k((double *)inf.ptr, inf.size, k, tmp.data(), multithread); break;
+            case 'f': fargmin_k((float *)inf.ptr, inf.size, k, tmp.data(), multithread); break;
+            default: throw std::invalid_argument("argmin only accepts d and f");
+        }
+        switch(retinf.format.front()) {
+            case 'L': std::copy(tmp.begin(), tmp.end(), (uint64_t *)retinf.ptr); break;
+            case 'I': std::copy(tmp.begin(), tmp.end(), (uint32_t *)retinf.ptr); break;
+            case 'H': std::copy(tmp.begin(), tmp.end(), (uint16_t *)retinf.ptr); break;
+            case 'B': std::copy(tmp.begin(), tmp.end(), (uint8_t *)retinf.ptr); break;
+            default: throw std::invalid_argument("internal argmin error");
         }
         return ret;
-    })
-    .def("argmax", [](py::array data) {
+    }, py::arg("array"), py::arg("mt") = false, py::arg("k") = 1)
+    .def("argmax", [](py::array data, int multithread, Py_ssize_t k) -> py::object {
         auto inf = data.request();
         if(inf.format.size() != 1) throw std::invalid_argument("bad format");
-        Py_ssize_t ret;
+        if(k == 1) {
+            Py_ssize_t ret;
+            switch(inf.format.front()) {
+                case 'd': ret = dargmax((double *)inf.ptr, inf.size, multithread); break;
+                case 'f': ret = fargmax((float *)inf.ptr, inf.size, multithread);  break;
+                default: throw std::invalid_argument("bad format");
+            }
+            return py::int_(ret);
+        }
+        py::array ret(py::dtype(size2dtype(inf.size)), std::vector<Py_ssize_t>{k});
+        std::vector<uint64_t> tmp(k);
+        auto retinf = ret.request();
         switch(inf.format.front()) {
-            case 'd': ret = dargmax((double *)inf.ptr, inf.size); break;
-            case 'f': ret = fargmax((float *)inf.ptr, inf.size);  break;
-            default: throw std::invalid_argument("bad format");
+            case 'd': dargmax_k((double *)inf.ptr, inf.size, k, tmp.data(), multithread); break;
+            case 'f': fargmax_k((float *)inf.ptr, inf.size, k, tmp.data(), multithread); break;
+            default: throw std::invalid_argument("argmax only accepts d and f");
+        }
+        switch(retinf.format.front()) {
+            case 'L': std::copy(tmp.begin(), tmp.end(), (uint64_t *)retinf.ptr); break;
+            case 'I': std::copy(tmp.begin(), tmp.end(), (uint32_t *)retinf.ptr); break;
+            case 'H': std::copy(tmp.begin(), tmp.end(), (uint16_t *)retinf.ptr); break;
+            case 'B': std::copy(tmp.begin(), tmp.end(), (uint8_t *)retinf.ptr); break;
+            default: throw std::invalid_argument("internal argmax error");
         }
         return ret;
-    })
+    }, py::arg("array"), py::arg("mt") = false, py::arg("k") = 1)
     .def("get_version", []() {return simd_sample_get_version();})
     .def("get_major_version", []() {return simd_sample_get_major_version();})
     .def("get_minor_version", []() {return simd_sample_get_minor_version();})
