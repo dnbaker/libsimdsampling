@@ -778,7 +778,7 @@ struct Comparator {
     template<typename OT>
     using otype = typename std::conditional<AR == ARGMAX, std::greater<OT>, std::less<OT>>::type;
     template<typename T2>
-    INLINE bool operator()(const T2 &x, const T2 &y) const {
+    static INLINE bool compare(const T2 &x, const T2 &y) {
         return otype<T2>()(x, y);
     }
 };
@@ -787,8 +787,8 @@ template<typename FT, ArgReduction AR>
 struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std::pair<FT, uint64_t>>, typename Comparator<std::pair<FT, uint64_t>, AR>::type> {
     using value_t = std::pair<FT, uint64_t>;
     using vec_t = std::vector<std::pair<FT, uint64_t>>;
-    using cmp_t = typename Comparator<std::pair<FT, uint64_t>, AR>::type;
-    using fcmp_t = typename Comparator<std::pair<FT, uint64_t>, AR>::otype<FT>;
+    using cmp_t = Comparator<std::pair<FT, uint64_t>, AR>;
+    //using fcmp_t = typename Comparator<std::pair<FT, uint64_t>, AR>::otype<FT>;
     uint32_t k_;
     pq_t(int k): k_(k) {
         this->c.reserve(k);
@@ -796,7 +796,7 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
     INLINE void add(FT val, uint64_t id) {
         if(this->size() < k_) {
             this->push(value_t(val, id));
-        } else if(fcmp_t()(val, this->top().first)) {
+        } else if(cmp_t::compare(val, this->top().first)) {
             this->pop();
             this->push(value_t(val, id));
         }
