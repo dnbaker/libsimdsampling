@@ -48,7 +48,7 @@ PYBIND11_MODULE(simdsampling, m) {
         }
         return ret;
     }, py::arg("data"), py::arg("seed") = 0, py::arg("k") = 1, py::arg("with_rep") = false, py::arg("exp_skips") = false)
-    .def("argmin", [](py::array data, int multithread, Py_ssize_t k) -> py::object {
+    .def("argmin", [](py::array data, Py_ssize_t k, int multithread) -> py::object {
         auto inf = data.request();
         if(inf.format.size() != 1) throw std::invalid_argument("bad format");
         if(k == 1) {
@@ -76,8 +76,8 @@ PYBIND11_MODULE(simdsampling, m) {
             default: throw std::invalid_argument("internal argmin error");
         }
         return ret;
-    }, py::arg("array"), py::arg("mt") = false, py::arg("k") = 1)
-    .def("argmax", [](py::array data, int multithread, Py_ssize_t k) -> py::object {
+    }, py::arg("array"), py::arg("k") = 1, py::arg("mt") = false)
+    .def("argmax", [](py::array data, Py_ssize_t k, int multithread) -> py::object {
         auto inf = data.request();
         if(inf.format.size() != 1) throw std::invalid_argument("bad format");
         if(k == 1) {
@@ -105,7 +105,7 @@ PYBIND11_MODULE(simdsampling, m) {
             default: throw std::invalid_argument("internal argmax error");
         }
         return ret;
-    }, py::arg("array"), py::arg("mt") = false, py::arg("k") = 1)
+    }, py::arg("array"), py::arg("k") = 1, py::arg("mt") = false)
     .def("get_version", []() {return simd_sample_get_version();})
     .def("get_major_version", []() {return simd_sample_get_major_version();})
     .def("get_minor_version", []() {return simd_sample_get_minor_version();})
