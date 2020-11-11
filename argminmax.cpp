@@ -4,72 +4,12 @@
 #include "aesctr/wy.h"
 #include "ctz.h"
 #include "macros.h"
+#include "reds.h"
 #include <limits>
 #include <type_traits>
 
 
-#ifdef __AVX512F__
-#define LSS_ALIGNMENT (sizeof(__m512) / sizeof(char))
-#elif __AVX2__
-#define LSS_ALIGNMENT (sizeof(__m256) / sizeof(char))
-#elif __SSE2__
-#define LSS_ALIGNMENT (sizeof(__m128) / sizeof(char))
-#else
-#define LSS_ALIGNMENT 1
-#endif
-
-
-template<typename Func>
-INLINE __m128 broadcast_reduce(__m128 x, const Func &func) {
-    __m128 m1 = _mm_shuffle_ps(x, x, _MM_SHUFFLE(0,0,3,2));
-    __m128 m2 = func(x, m1);
-    __m128 m3 = _mm_shuffle_ps(m2, m2, _MM_SHUFFLE(0,0,0,1));
-    return func(m2, m3);
-}
-
-INLINE __m128 broadcast_max(__m128 x) {
-    return broadcast_reduce<decltype(_mm_max_ps)>(x, _mm_max_ps);
-}
-INLINE __m128 broadcast_min(__m128 x) {
-    return broadcast_reduce<decltype(_mm_min_ps)>(x, _mm_min_ps);
-}
-template<typename Func>
-INLINE __m256 broadcast_reduce(__m256 x, const Func &func) {
-    const __m256 permHalves = _mm256_permute2f128_ps(x, x, 1);
-    const __m256 m0 = func(permHalves, x);
-    const __m256 perm0 = _mm256_permute_ps(m0, 0b01001110);
-    const __m256 m1 = func(m0, perm0);
-    const __m256 perm1 = _mm256_permute_ps(m1, 0b10110001);
-    const __m256 m2 = func(perm1, m1);
-    return m2;
-}
-
-INLINE __m256 broadcast_max(__m256 x) {
-    return broadcast_reduce<decltype(_mm256_max_ps)>(x, _mm256_max_ps);
-}
-INLINE __m256 broadcast_min(__m256 x) {
-    return broadcast_reduce<decltype(_mm256_min_ps)>(x, _mm256_min_ps);
-}
-template<typename Func>
-INLINE __m256d broadcast_reduce(__m256d x, const Func &func) {
-    __m256d y = _mm256_permute2f128_pd(x, x, 1);
-    __m256d m1 = func(x, y);
-    __m256d m2 = _mm256_permute_pd(m1, 5);
-    __m256d newmaxv = func(m1, m2);
-    return newmaxv;
-};
-INLINE __m256d broadcast_max(__m256d x) {
-    return broadcast_reduce<decltype(_mm256_max_pd)>(x, _mm256_max_pd);
-}
-INLINE __m256d broadcast_min(__m256d x) {
-    return broadcast_reduce<decltype(_mm256_min_pd)>(x, _mm256_min_pd);
-}
-
-enum LoadFormat {
-    ALIGNED,
-    UNALIGNED
-};
-
+using namespace reservoir_simd;
 // Forward declaratios of core kernels
 // Single-sample
 template<LoadFormat aln, ArgReduction AR, bool MT> uint64_t double_argsel_fmt(const double *weights, size_t n);
@@ -78,9 +18,10 @@ template<LoadFormat aln, ArgReduction AR, bool MT> uint64_t float_argsel_fmt(con
 template<LoadFormat aln, ArgReduction AR, bool MT> ptrdiff_t double_argsel_k_fmt(const double * weights, size_t n, ptrdiff_t k, uint64_t *ret);
 template<LoadFormat aln, ArgReduction AR, bool MT> ptrdiff_t float_argsel_k_fmt(const float * weights, size_t n, ptrdiff_t k, uint64_t *ret);
 
+
 // TODO: add top-k selection methods
 extern "C" {
-uint64_t fargsel(const float *weights, size_t n, ArgReduction ar, int mt)
+SIMD_SAMPLING_API uint64_t fargsel(const float *weights, size_t n, ArgReduction ar, int mt)
 {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     uint64_t ret;
@@ -98,57 +39,57 @@ uint64_t fargsel(const float *weights, size_t n, ArgReduction ar, int mt)
     return ret;
 }
 
-uint64_t dargmin_mt(const double *weights, size_t n) {
+SIMD_SAMPLING_API uint64_t dargmin_mt(const double *weights, size_t n) {
     return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
         double_argsel_fmt<UNALIGNED, ARGMIN, true>(weights, n): double_argsel_fmt<ALIGNED, ARGMIN, true>(weights, n);
 }
-uint64_t dargmin_st(const double *weights, size_t n) {
+SIMD_SAMPLING_API uint64_t dargmin_st(const double *weights, size_t n) {
     return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
         double_argsel_fmt<UNALIGNED, ARGMIN, false>(weights, n): double_argsel_fmt<ALIGNED, ARGMIN, false>(weights, n);
 }
-uint64_t dargmin(const double *weights, size_t n, int mt) {
+SIMD_SAMPLING_API uint64_t dargmin(const double *weights, size_t n, int mt) {
     return mt ? dargmin_mt(weights, n): dargmin_st(weights, n);
 }
-uint64_t fargmin_mt(const float *weights, size_t n) {
+SIMD_SAMPLING_API uint64_t fargmin_mt(const float *weights, size_t n) {
     return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
         float_argsel_fmt<UNALIGNED, ARGMIN, true>(weights, n): float_argsel_fmt<ALIGNED, ARGMIN, true>(weights, n);
 }
-uint64_t fargmin_st(const float *weights, size_t n) {
+SIMD_SAMPLING_API uint64_t fargmin_st(const float *weights, size_t n) {
     return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
         float_argsel_fmt<UNALIGNED, ARGMIN, false>(weights, n): float_argsel_fmt<ALIGNED, ARGMIN, false>(weights, n);
 }
 
-uint64_t fargmin(const float *weights, size_t n, int mt) {
+SIMD_SAMPLING_API uint64_t fargmin(const float *weights, size_t n, int mt) {
     return mt ? fargmin_mt(weights, n): fargmin_st(weights, n);
 }
 
 
-uint64_t dargmax_mt(const double *weights, size_t n) {
+SIMD_SAMPLING_API uint64_t dargmax_mt(const double *weights, size_t n) {
     return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
         double_argsel_fmt<UNALIGNED, ARGMAX, true>(weights, n): double_argsel_fmt<ALIGNED, ARGMAX, true>(weights, n);
 }
-uint64_t dargmax_st(const double *weights, size_t n) {
+SIMD_SAMPLING_API uint64_t dargmax_st(const double *weights, size_t n) {
     return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
         double_argsel_fmt<UNALIGNED, ARGMAX, false>(weights, n): double_argsel_fmt<ALIGNED, ARGMAX, false>(weights, n);
 }
-uint64_t dargmax(const double *weights, size_t n, int  mt) {
+SIMD_SAMPLING_API uint64_t dargmax(const double *weights, size_t n, int  mt) {
     return mt ? dargmax_mt(weights, n): dargmax_st(weights, n);
 }
-uint64_t fargmax_mt(const float *weights, size_t n) {
+SIMD_SAMPLING_API uint64_t fargmax_mt(const float *weights, size_t n) {
     return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
         float_argsel_fmt<UNALIGNED, ARGMAX, true>(weights, n): float_argsel_fmt<ALIGNED, ARGMAX, true>(weights, n);
 }
-uint64_t fargmax_st(const float *weights, size_t n) {
+SIMD_SAMPLING_API uint64_t fargmax_st(const float *weights, size_t n) {
     return reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT ?
         float_argsel_fmt<UNALIGNED, ARGMAX, false>(weights, n): float_argsel_fmt<ALIGNED, ARGMAX, false>(weights, n);
 }
 
-uint64_t fargmax(const float *weights, size_t n, int mt) {
+SIMD_SAMPLING_API uint64_t fargmax(const float *weights, size_t n, int mt) {
     return mt ? fargmax_mt(weights, n): fargmax_st(weights, n);
 }
 
 
-uint64_t dargsel(const double *weights, size_t n, ArgReduction ar, int mt)
+SIMD_SAMPLING_API uint64_t dargsel(const double *weights, size_t n, ArgReduction ar, int mt)
 {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     uint64_t ret;
@@ -166,7 +107,7 @@ uint64_t dargsel(const double *weights, size_t n, ArgReduction ar, int mt)
     return ret;
 }
 
-ptrdiff_t fargsel_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, ArgReduction ar, int mt)
+SIMD_SAMPLING_API ptrdiff_t fargsel_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, ArgReduction ar, int mt)
 {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
@@ -184,7 +125,7 @@ ptrdiff_t fargsel_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, 
     return rv;
 }
 
-ptrdiff_t dargsel_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, ArgReduction ar, int mt)
+SIMD_SAMPLING_API ptrdiff_t dargsel_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, ArgReduction ar, int mt)
 {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
@@ -202,7 +143,7 @@ ptrdiff_t dargsel_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret,
     return rv;
 }
 
-ptrdiff_t dargsel_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar) {
+SIMD_SAMPLING_API ptrdiff_t dargsel_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     switch((int(aligned) << 1) | (int(ar == ARGMAX))) {
@@ -214,7 +155,7 @@ ptrdiff_t dargsel_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *r
     }
     return rv;
 }
-ptrdiff_t dargsel_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar) {
+SIMD_SAMPLING_API ptrdiff_t dargsel_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     switch((int(aligned) << 1) | (int(ar == ARGMAX))) {
@@ -227,7 +168,7 @@ ptrdiff_t dargsel_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *r
     return rv;
 }
 
-ptrdiff_t fargsel_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar) {
+SIMD_SAMPLING_API ptrdiff_t fargsel_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     switch((int(aligned) << 1) | (int(ar == ARGMAX))) {
@@ -239,7 +180,7 @@ ptrdiff_t fargsel_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *re
     }
     return rv;
 }
-ptrdiff_t fargsel_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar) {
+SIMD_SAMPLING_API ptrdiff_t fargsel_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     switch((int(aligned) << 1) | (int(ar == ARGMAX))) {
@@ -252,38 +193,38 @@ ptrdiff_t fargsel_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *re
     return rv;
 }
 
-ptrdiff_t dargmax_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
+SIMD_SAMPLING_API ptrdiff_t dargmax_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
     if(mt) return dargmax_k_mt(weights, n, k, ret);
     else   return dargmax_k_st(weights, n, k, ret);
 }
-ptrdiff_t fargmax_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
+SIMD_SAMPLING_API ptrdiff_t fargmax_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
     if(mt) return fargmax_k_mt(weights, n, k, ret);
     else   return fargmax_k_st(weights, n, k, ret);
 }
-ptrdiff_t dargmin_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
+SIMD_SAMPLING_API ptrdiff_t dargmin_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
     if(mt) return dargmin_k_mt(weights, n, k, ret);
     else   return dargmin_k_st(weights, n, k, ret);
 }
-ptrdiff_t fargmin_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
+SIMD_SAMPLING_API ptrdiff_t fargmin_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt) {
     if(mt) return fargmin_k_mt(weights, n, k, ret);
     else   return fargmin_k_st(weights, n, k, ret);
 }
 
-ptrdiff_t fargmax_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+SIMD_SAMPLING_API ptrdiff_t fargmax_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     if(aligned) rv = float_argsel_k_fmt<ALIGNED, ARGMIN, false>(weights, n, k, ret);
     else        rv = float_argsel_k_fmt<UNALIGNED, ARGMIN, false>(weights, n, k, ret);
     return rv;
 }
-ptrdiff_t dargmax_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+SIMD_SAMPLING_API ptrdiff_t dargmax_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     if(aligned) rv = double_argsel_k_fmt<ALIGNED, ARGMIN, false>(weights, n, k, ret);
     else        rv = double_argsel_k_fmt<UNALIGNED, ARGMIN, false>(weights, n, k, ret);
     return rv;
 }
-ptrdiff_t fargmax_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+SIMD_SAMPLING_API ptrdiff_t fargmax_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     if(aligned) rv = float_argsel_k_fmt<ALIGNED, ARGMIN, true>(weights, n, k, ret);
@@ -291,28 +232,28 @@ ptrdiff_t fargmax_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *re
     return rv;
 }
 
-ptrdiff_t dargmax_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+SIMD_SAMPLING_API ptrdiff_t dargmax_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     if(aligned) rv = double_argsel_k_fmt<ALIGNED, ARGMIN, true>(weights, n, k, ret);
     else        rv = double_argsel_k_fmt<UNALIGNED, ARGMIN, true>(weights, n, k, ret);
     return rv;
 }
-ptrdiff_t fargmin_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+SIMD_SAMPLING_API ptrdiff_t fargmin_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     if(aligned) rv = float_argsel_k_fmt<ALIGNED, ARGMIN, false>(weights, n, k, ret);
     else        rv = float_argsel_k_fmt<UNALIGNED, ARGMIN, false>(weights, n, k, ret);
     return rv;
 }
-ptrdiff_t dargmin_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+SIMD_SAMPLING_API ptrdiff_t dargmin_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     if(aligned) rv = double_argsel_k_fmt<ALIGNED, ARGMIN, false>(weights, n, k, ret);
     else        rv = double_argsel_k_fmt<UNALIGNED, ARGMIN, false>(weights, n, k, ret);
     return rv;
 }
-ptrdiff_t fargmin_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+SIMD_SAMPLING_API ptrdiff_t fargmin_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     if(aligned) rv = float_argsel_k_fmt<ALIGNED, ARGMIN, true>(weights, n, k, ret);
@@ -320,7 +261,7 @@ ptrdiff_t fargmin_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *re
     return rv;
 }
 
-ptrdiff_t dargmin_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
+SIMD_SAMPLING_API ptrdiff_t dargmin_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret) {
     const bool aligned = reinterpret_cast<uint64_t>(weights) % LSS_ALIGNMENT == 0;
     ptrdiff_t rv;
     if(aligned) rv = double_argsel_k_fmt<ALIGNED, ARGMIN, true>(weights, n, k, ret);
@@ -331,70 +272,6 @@ ptrdiff_t dargmin_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *r
 } // extern "C"
 
 
-#ifdef __AVX512F__
-INLINE __m512 load(const float *ptr, std::false_type) {
-    return _mm512_loadu_ps(ptr);
-}
-INLINE __m512d load(const double *ptr, std::false_type) {
-    return _mm512_loadu_pd(ptr);
-}
-INLINE __m512 load(const float *ptr, std::true_type) {
-    return _mm512_load_ps(ptr);
-}
-INLINE __m512d load(const double *ptr, std::true_type) {
-    return _mm512_load_pd(ptr);
-}
-template<LoadFormat aln>
-__m512d load(const double *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-template<LoadFormat aln>
-__m512 load(const float *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-#elif defined(__AVX2__)
-INLINE __m256 load(const float *ptr, std::false_type) {
-    return _mm256_loadu_ps(ptr);
-}
-INLINE __m256d load(const double *ptr, std::false_type) {
-    return _mm256_loadu_pd(ptr);
-}
-INLINE __m256 load(const float *ptr, std::true_type) {
-    return _mm256_load_ps(ptr);
-}
-INLINE __m256d load(const double *ptr, std::true_type) {
-    return _mm256_load_pd(ptr);
-}
-template<LoadFormat aln>
-__m256 load(const float *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-template<LoadFormat aln>
-__m256d load(const double *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-#elif defined(__SSE2__)
-INLINE __m128 load(const float *ptr, std::false_type) {
-    return _mm_loadu_ps(ptr);
-}
-INLINE __m128d load(const double *ptr, std::false_type) {
-    return _mm_loadu_pd(ptr);
-}
-INLINE __m128 load(const float *ptr, std::true_type) {
-    return _mm_load_ps(ptr);
-}
-INLINE __m128d load(const double *ptr, std::true_type) {
-    return _mm_load_pd(ptr);
-}
-template<LoadFormat aln>
-__m128d load(const double *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-template<LoadFormat aln>
-__m128 load(const float *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-#endif
 template<ArgReduction AR>
 struct Cmp {
 #if __AVX512F__
@@ -548,7 +425,7 @@ struct Cmp {
 };
 
 template<LoadFormat aln, ArgReduction AR, bool MT>
-uint64_t double_argsel_fmt(const double *weights, size_t n)
+SIMD_SAMPLING_API uint64_t double_argsel_fmt(const double *weights, size_t n)
 {
     uint64_t bestind = 0;
     static constexpr bool IS_MAX = AR == ARGMAX;
@@ -655,7 +532,7 @@ uint64_t double_argsel_fmt(const double *weights, size_t n)
 
 
 template<LoadFormat aln, ArgReduction AR, bool MT>
-uint64_t float_argsel_fmt(const float * weights, size_t n)
+SIMD_SAMPLING_API uint64_t float_argsel_fmt(const float * weights, size_t n)
 {
     uint64_t bestind = 0;
     static constexpr bool IS_MAX = AR == ARGMAX;
@@ -784,13 +661,13 @@ struct Comparator {
 };
 
 template<typename FT, ArgReduction AR>
-struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std::pair<FT, uint64_t>>, typename Comparator<std::pair<FT, uint64_t>, AR>::type> {
+struct argminpq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std::pair<FT, uint64_t>>, typename Comparator<std::pair<FT, uint64_t>, AR>::type> {
     using value_t = std::pair<FT, uint64_t>;
     using vec_t = std::vector<std::pair<FT, uint64_t>>;
     using cmp_t = Comparator<std::pair<FT, uint64_t>, AR>;
     //using fcmp_t = typename Comparator<std::pair<FT, uint64_t>, AR>::otype<FT>;
     uint32_t k_;
-    pq_t(int k): k_(k) {
+    argminpq_t(int k): k_(k) {
         this->c.reserve(k);
     }
     INLINE void add(FT val, uint64_t id) {
@@ -806,14 +683,14 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
 template<LoadFormat aln, ArgReduction AR, bool MT>
 ptrdiff_t float_argsel_k_fmt(const float * weights, size_t n, ptrdiff_t k, uint64_t *ret)
 {
-    std::vector<pq_t<float, AR>> pqs;
+    std::vector<argminpq_t<float, AR>> pqs;
     if(MT) {
         int nt;
         #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
-        pqs.resize(nt, pq_t<float, AR>(k));
+        pqs.resize(nt, argminpq_t<float, AR>(k));
     } else {
         pqs.emplace_back(k);
     }
@@ -833,7 +710,7 @@ ptrdiff_t float_argsel_k_fmt(const float * weights, size_t n, ptrdiff_t k, uint6
         for(size_t o = 0; o < e; ++o) {
             const int tid = MT ? omp_get_thread_num(): 0;
             auto &vmaxv = vmaxvs[tid];
-            pq_t<float, AR> &pq = pqs[tid];
+            argminpq_t<float, AR> &pq = pqs[tid];
             __m512 lv = load<aln>((const float *)&weights[o * nperel]);
             auto cmpmask = Cmp<AR>::cmp(lv, vmaxv);
             if(cmpmask) {
@@ -864,7 +741,7 @@ ptrdiff_t float_argsel_k_fmt(const float * weights, size_t n, ptrdiff_t k, uint6
         }
     } else {
         for(size_t o = 0; o < e; ++o) {
-            pq_t<float, AR> &pq = pqs[0];
+            argminpq_t<float, AR> &pq = pqs[0];
             auto &vmaxv = vmaxvs[0];
             __m512 lv = load<aln>((const float *)&weights[o * nperel]);
             auto cmpmask = Cmp<AR>::cmp(lv, vmaxv);
@@ -995,17 +872,17 @@ ptrdiff_t float_argsel_k_fmt(const float * weights, size_t n, ptrdiff_t k, uint6
     return rv;
 }
 
-template<LoadFormat aln, ArgReduction AR, bool MT>
-ptrdiff_t double_argsel_k_fmt(const double * weights, size_t n, ptrdiff_t k, uint64_t *ret)
+template<LoadFormat aln, ArgReduction AR, bool MT> ptrdiff_t
+double_argsel_k_fmt(const double * weights, size_t n, ptrdiff_t k, uint64_t *ret)
 {
-    std::vector<pq_t<double, AR>> pqs;
+    std::vector<argminpq_t<double, AR>> pqs;
     if(MT) {
         int nt;
         #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
-        pqs.resize(nt, pq_t<double, AR>(k));
+        pqs.resize(nt, argminpq_t<double, AR>(k));
     } else {
         pqs.emplace_back(k);
     }
@@ -1025,7 +902,7 @@ ptrdiff_t double_argsel_k_fmt(const double * weights, size_t n, ptrdiff_t k, uin
         for(size_t o = 0; o < e; ++o) {
             const int tid = MT ? omp_get_thread_num(): 0;
             auto &vmaxv = vmaxvs[tid];
-            pq_t<double, AR> &pq = pqs[tid];
+            argminpq_t<double, AR> &pq = pqs[tid];
             __m512d lv = load<aln>((const double *)&weights[o * nperel]);
             auto cmpmask = Cmp<AR>::cmp(lv, vmaxv);
             if(cmpmask) {
@@ -1048,7 +925,7 @@ ptrdiff_t double_argsel_k_fmt(const double * weights, size_t n, ptrdiff_t k, uin
         }
     } else {
         for(size_t o = 0; o < e; ++o) {
-            pq_t<double, AR> &pq = pqs[0];
+            argminpq_t<double, AR> &pq = pqs[0];
             auto &vmaxv = vmaxvs[0];
             __m512d lv = load<aln>((const double *)&weights[o * nperel]);
             auto cmpmask = Cmp<AR>::cmp(lv, vmaxv);

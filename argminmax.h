@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef SIMD_SAMPLING_API
+#define SIMD_SAMPLING_API
+#endif
+
 #ifndef __cplusplus
 #include <stdint.h>
 #include <stdlib.h>
@@ -22,38 +26,38 @@ using std::size_t;
 using std::ptrdiff_t;
 extern "C" {
 #endif
-uint64_t fargsel(const float *weights, size_t n, enum ArgReduction ar, int mt);
-uint64_t fargmin(const float *weights, size_t n, int mt);
-uint64_t fargmax(const float *weights, size_t n, int mt);
-uint64_t dargsel(const double *weights, size_t n, enum ArgReduction ar, int mt);
-uint64_t dargmin(const double *weights, size_t n, int mt);
-uint64_t dargmax(const double *weights, size_t n, int mt);
-uint64_t fargmin_st(const float *weights, size_t n);
-uint64_t fargmax_st(const float *weights, size_t n);
-uint64_t dargmin_st(const double *weights, size_t n);
-uint64_t dargmax_st(const double *weights, size_t n);
-uint64_t fargmin_mt(const float *weights, size_t n);
-uint64_t fargmax_mt(const float *weights, size_t n);
-uint64_t dargmin_mt(const double *weights, size_t n);
-uint64_t dargmax_mt(const double *weights, size_t n);
-ptrdiff_t fargsel_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar, int mt);
-ptrdiff_t dargsel_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar, int mt);
-ptrdiff_t fargsel_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar);
-ptrdiff_t dargsel_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar);
-ptrdiff_t fargsel_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar);
-ptrdiff_t dargsel_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar);
-ptrdiff_t fargmin_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret);
-ptrdiff_t dargmin_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret);
-ptrdiff_t fargmin_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret);
-ptrdiff_t dargmin_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret);
-ptrdiff_t fargmax_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret);
-ptrdiff_t dargmax_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret);
-ptrdiff_t fargmax_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret);
-ptrdiff_t dargmax_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret);
-ptrdiff_t dargmin_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt);
-ptrdiff_t fargmin_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt);
-ptrdiff_t dargmax_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt);
-ptrdiff_t fargmax_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt);
+SIMD_SAMPLING_API uint64_t fargsel(const float *weights, size_t n, enum ArgReduction ar, int mt);
+SIMD_SAMPLING_API uint64_t fargmin(const float *weights, size_t n, int mt);
+SIMD_SAMPLING_API uint64_t fargmax(const float *weights, size_t n, int mt);
+SIMD_SAMPLING_API uint64_t dargsel(const double *weights, size_t n, enum ArgReduction ar, int mt);
+SIMD_SAMPLING_API uint64_t dargmin(const double *weights, size_t n, int mt);
+SIMD_SAMPLING_API uint64_t dargmax(const double *weights, size_t n, int mt);
+SIMD_SAMPLING_API uint64_t fargmin_st(const float *weights, size_t n);
+SIMD_SAMPLING_API uint64_t fargmax_st(const float *weights, size_t n);
+SIMD_SAMPLING_API uint64_t dargmin_st(const double *weights, size_t n);
+SIMD_SAMPLING_API uint64_t dargmax_st(const double *weights, size_t n);
+SIMD_SAMPLING_API uint64_t fargmin_mt(const float *weights, size_t n);
+SIMD_SAMPLING_API uint64_t fargmax_mt(const float *weights, size_t n);
+SIMD_SAMPLING_API uint64_t dargmin_mt(const double *weights, size_t n);
+SIMD_SAMPLING_API uint64_t dargmax_mt(const double *weights, size_t n);
+SIMD_SAMPLING_API ptrdiff_t fargsel_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar, int mt);
+SIMD_SAMPLING_API ptrdiff_t dargsel_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar, int mt);
+SIMD_SAMPLING_API ptrdiff_t fargsel_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar);
+SIMD_SAMPLING_API ptrdiff_t dargsel_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar);
+SIMD_SAMPLING_API ptrdiff_t fargsel_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar);
+SIMD_SAMPLING_API ptrdiff_t dargsel_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, enum ArgReduction ar);
+SIMD_SAMPLING_API ptrdiff_t fargmin_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret);
+SIMD_SAMPLING_API ptrdiff_t dargmin_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret);
+SIMD_SAMPLING_API ptrdiff_t fargmin_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret);
+SIMD_SAMPLING_API ptrdiff_t dargmin_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret);
+SIMD_SAMPLING_API ptrdiff_t fargmax_k_st(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret);
+SIMD_SAMPLING_API ptrdiff_t dargmax_k_st(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret);
+SIMD_SAMPLING_API ptrdiff_t fargmax_k_mt(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret);
+SIMD_SAMPLING_API ptrdiff_t dargmax_k_mt(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret);
+SIMD_SAMPLING_API ptrdiff_t dargmin_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt);
+SIMD_SAMPLING_API ptrdiff_t fargmin_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt);
+SIMD_SAMPLING_API ptrdiff_t dargmax_k(const double *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt);
+SIMD_SAMPLING_API ptrdiff_t fargmax_k(const float *weights, size_t n, ptrdiff_t k, uint64_t *ret, int mt);
 #ifdef __cplusplus
 }
 #include <vector>

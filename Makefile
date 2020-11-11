@@ -111,7 +111,7 @@ sleef/build: sleef
 	ls sleef/build 2>/dev/null || mkdir sleef/build
 
 libsleef.a: sleef/build
-	ls libsleef.a 2>/dev/null || (cd $< && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) &&  cp lib/libsleef.a lib/libsleefdft.a ../..)
+	ls libsleef.a 2>/dev/null || ((ls ../libsleef.a && cp ../libsleef.a .) || cd $< && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) &&  cp lib/libsleef.a lib/libsleefdft.a ../..)
 
 libsleef-dyn: sleef/dynbuild
 	ls libsleef*so 2>/dev/null || ls libsleef*dylib 2>/dev/null || (cd sleef/dynbuild && echo "about to cmake " &&  $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && (cp lib/libsleef*dylib ../.. 2>/dev/null || cp lib/libsleef*so ../.. 2>/dev/null))
