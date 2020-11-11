@@ -50,6 +50,12 @@ INLINE __m256 broadcast_max(__m256 x) {
 INLINE __m256 broadcast_min(__m256 x) {
     return broadcast_reduce<decltype(_mm256_min_ps)>(x, _mm256_min_ps);
 }
+INLINE __m256 broadcast_mul(__m256 x) {
+    return broadcast_reduce<decltype(_mm256_mul_ps)>(x, _mm256_mul_ps);
+}
+INLINE __m256 broadcast_add(__m256 x) {
+    return broadcast_reduce<decltype(_mm256_add_ps)>(x, _mm256_add_ps);
+}
 template<typename Func>
 INLINE __m256d broadcast_reduce(__m256d x, const Func &func) {
     __m256d y = _mm256_permute2f128_pd(x, x, 1);
