@@ -72,7 +72,7 @@ SIMD_SAMPLING_API uint64_t dsimd_sample(const double *weights, size_t n, uint64_
         : double_simd_sampling_fmt<ALIGNED>(weights, n, seed);
 }
 
-SIMD_SAMPLING_API uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed, SampleFmt fmt)
+SIMD_SAMPLING_API uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed, enum SampleFmt fmt)
 {
     if(fmt & USE_EXPONENTIAL_SKIPS) {
         int nt = 1;
