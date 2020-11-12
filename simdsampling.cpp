@@ -9,6 +9,7 @@
 #include <limits>
 #include <queue>
 #include <memory>
+#include "reds.h"
 
 #if __AVX512F__ || __AVX2__
 #include "simdpcg32.h"
@@ -38,35 +39,23 @@
 #define USE_AVX256_RNG 1
 #endif
 
-
-INLINE __m128 broadcast_max(__m128 x) {
-    __m128 max1 = _mm_shuffle_ps(x, x, _MM_SHUFFLE(0,0,3,2));
-    __m128 max2 = _mm_max_ps(x, max1);
-    __m128 max3 = _mm_shuffle_ps(max2, max2, _MM_SHUFFLE(0,0,0,1));
-    return _mm_max_ps(max2, max3);
-}
-
-
-enum LoadFormat {
-    ALIGNED,
-    UNALIGNED
-};
+using namespace reservoir_simd;
 
 // Forward declaratios of core kernels
 // Single-sample
 template<LoadFormat aln>
-uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed);
+SIMD_SAMPLING_API uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed);
 template<LoadFormat aln>
-uint64_t float_simd_sampling_fmt(const float *weights, size_t n, uint64_t seed);
+SIMD_SAMPLING_API uint64_t float_simd_sampling_fmt(const float *weights, size_t n, uint64_t seed);
 
 // Multiple-sample
-template<LoadFormat aln> int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
-template<LoadFormat aln> int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
-template<LoadFormat aln> int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
-template<LoadFormat aln> int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+template<LoadFormat aln> SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+template<LoadFormat aln> SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+template<LoadFormat aln> SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
+template<LoadFormat aln> SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 
 extern "C" {
-uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed, enum SampleFmt fmt)
+SIMD_SAMPLING_API uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed, enum SampleFmt fmt)
 {
     if(fmt & USE_EXPONENTIAL_SKIPS) {
         int nt = 1;
@@ -83,7 +72,7 @@ uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed, enum Sampl
         : double_simd_sampling_fmt<ALIGNED>(weights, n, seed);
 }
 
-uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed, SampleFmt fmt)
+SIMD_SAMPLING_API uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed, enum SampleFmt fmt)
 {
     if(fmt & USE_EXPONENTIAL_SKIPS) {
         int nt = 1;
@@ -100,7 +89,7 @@ uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed, SampleFmt f
         : float_simd_sampling_fmt<ALIGNED>(weights, n, seed);
 }
 
-int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt)
+SIMD_SAMPLING_API int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt)
 {
     if(k <= 0) throw std::invalid_argument(std::string("k must be > 0 [") + std::to_string(k) + "]\n");
     if(fmt & USE_EXPONENTIAL_SKIPS) {
@@ -129,7 +118,7 @@ int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64
         : double_simd_sample_k_fmt<ALIGNED>(weights, n, k, ret, seed, with_replacement);
 }
 
-int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt)
+SIMD_SAMPLING_API int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt)
 {
     if(k <= 0) throw std::invalid_argument(std::string("k must be > 0 [") + std::to_string(k) + "]\n");
     if(fmt & USE_EXPONENTIAL_SKIPS) {
@@ -159,129 +148,6 @@ int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_
 
 
 } // extern "C" for the C-api
-
-#ifdef __AVX512F__
-INLINE __m512 load(const float *ptr, std::false_type) {
-#if LSS_MAX_0
-    return _mm512_max_ps(_mm512_loadu_ps(ptr), _mm512_setzero_ps());
-#else
-    return _mm512_loadu_ps(ptr);
-#endif
-}
-INLINE __m512d load(const double *ptr, std::false_type) {
-#if LSS_MAX_0
-    return _mm512_max_pd(_mm512_loadu_pd(ptr), _mm512_setzero_pd());
-#else
-    return _mm512_loadu_pd(ptr);
-#endif
-}
-INLINE __m512 load(const float *ptr, std::true_type) {
-#if LSS_MAX_0
-    return _mm512_max_ps(_mm512_load_ps(ptr), _mm512_setzero_ps());
-#else
-    return _mm512_load_ps(ptr);
-#endif
-}
-INLINE __m512d load(const double *ptr, std::true_type) {
-#if LSS_MAX_0
-    return _mm512_max_pd(_mm512_load_pd(ptr), _mm512_setzero_pd());
-#else
-    return _mm512_load_pd(ptr);
-#endif
-}
-template<LoadFormat aln>
-__m512d load(const double *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-template<LoadFormat aln>
-__m512 load(const float *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-#elif defined(__AVX2__)
-INLINE __m256 load(const float *ptr, std::false_type) {
-#if LSS_MAX_0
-    return _mm256_max_ps(_mm256_loadu_ps(ptr), _mm256_setzero_ps());
-#else
-    return _mm256_loadu_ps(ptr);
-#endif
-}
-INLINE __m256d load(const double *ptr, std::false_type) {
-#if LSS_MAX_0
-    return _mm256_max_pd(_mm256_loadu_pd(ptr), _mm256_setzero_pd());
-#else
-    return _mm256_loadu_pd(ptr);
-#endif
-}
-INLINE __m256 load(const float *ptr, std::true_type) {
-#if LSS_MAX_0
-    return _mm256_max_ps(_mm256_load_ps(ptr), _mm256_setzero_ps());
-#else
-    return _mm256_load_ps(ptr);
-#endif
-}
-INLINE __m256d load(const double *ptr, std::true_type) {
-#if LSS_MAX_0
-    return _mm256_max_pd(_mm256_load_pd(ptr), _mm256_setzero_pd());
-#else
-    return _mm256_load_pd(ptr);
-#endif
-}
-template<LoadFormat aln>
-__m256 load(const float *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-template<LoadFormat aln>
-__m256d load(const double *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-}
-#elif defined(__SSE2__)
-INLINE __m128 load(const float *ptr, std::false_type) {
-    return _mm_loadu_ps(ptr);
-}
-INLINE __m128d load(const double *ptr, std::false_type) {
-    return _mm_loadu_pd(ptr);
-}
-INLINE __m128 load(const float *ptr, std::true_type) {
-    return _mm_load_ps(ptr);
-}
-INLINE __m128d load(const double *ptr, std::true_type) {
-    return _mm_load_pd(ptr);
-}
-template<LoadFormat aln>
-__m128d load(const double *ptr) {
-   __m128d ret = load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-#if LSS_MAX_0
-    ret = _mm_max_pd(ret, _mm_setzero_pd());
-#endif
-    return ret;
-}
-template<LoadFormat aln>
-__m128 load(const float *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-   __m128 ret = load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-#if LSS_MAX_0
-    ret = _mm_max_ps(ret, _mm_setzero_ps());
-#endif
-    return ret;
-}
-#endif
-
-#if __AVX512F__ && (!defined(__AVX512DQ__) || !__AVX512DQ__)
-INLINE __m512i pack_result(__m128i a, __m128i b, __m128i c, __m128i d) {
-    __m512i ret = _mm512_castsi128_si512(a);
-    ret = _mm512_inserti32x4(ret, b, 1);
-    ret = _mm512_inserti32x4(ret, c, 2);
-    ret = _mm512_inserti32x4(ret, d, 3);
-    return ret;
-}
-#endif
-#if __AVX512F__
-INLINE __m512i pack_result(__m256i a, __m256i b) {
-    __m512i ret = _mm512_castsi256_si512(a);
-     ret = _mm512_inserti64x4(ret, b, 1);
-    return ret;
-}
-#endif
 
 template<LoadFormat aln>
 uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed)
@@ -731,7 +597,7 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
 };
 
 template<LoadFormat aln>
-int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
+SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
 {
     if(k <= 0) throw std::invalid_argument("k must be > 0");
     wy::WyRand<uint64_t> baserng(seed * seed + 13);
@@ -1079,7 +945,7 @@ int double_simd_sample_k_fmt(const double *weights, size_t n, int k, uint64_t *r
 }
 
 template<LoadFormat aln>
-int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
+SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement)
 {
     if(k <= 0) throw std::invalid_argument("k must be > 0");
     wy::WyRand<uint64_t> baserng(seed * seed + 13);
@@ -1376,27 +1242,21 @@ int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret
 
 namespace reservoir_simd {
 
-template<> int sample_k<double>(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt) {
-    return dsimd_sample_k(weights, n, k, ret, seed, fmt);
-}
-template<> int sample_k<float>(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt) {
-    return fsimd_sample_k(weights, n, k, ret, seed, fmt);
-}
 
 }
 
 extern "C" {
 
-int simd_sample_get_version() {
+SIMD_SAMPLING_API int simd_sample_get_version() {
     return LIB_SIMDSAMPLING_VERSION;
 }
-int simd_sample_get_major_version() {
+SIMD_SAMPLING_API int simd_sample_get_major_version() {
     return LIB_SIMDSAMPLING_MAJOR;
 }
-int simd_sample_get_minor_version() {
+SIMD_SAMPLING_API int simd_sample_get_minor_version() {
     return LIB_SIMDSAMPLING_MINOR;
 }
-int simd_sample_get_revision_version() {
+SIMD_SAMPLING_API int simd_sample_get_revision_version() {
     return LIB_SIMDSAMPLING_REVISION;
 }
 

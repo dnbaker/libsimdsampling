@@ -1,5 +1,10 @@
 #ifndef SIMD_SAMPLING_H
 #define SIMD_SAMPLING_H
+
+#ifndef SIMD_SAMPLING_API
+#define SIMD_SAMPLING_API
+#endif
+
 #include <x86intrin.h>
 #include "macros.h"
 
@@ -28,18 +33,18 @@ enum SampleFmt {
 #ifdef __cplusplus
 extern "C" {
 #endif
-uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed, enum SampleFmt fmt);
-uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed, enum SampleFmt fmt);
+SIMD_SAMPLING_API uint64_t fsimd_sample(const float *weights, size_t n, uint64_t seed, enum SampleFmt fmt);
+SIMD_SAMPLING_API uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed, enum SampleFmt fmt);
 
-int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt);
-int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt);
+SIMD_SAMPLING_API int fsimd_sample_k(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt);
+SIMD_SAMPLING_API int dsimd_sample_k(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt);
 // Return value: the number of selected elements; min(n, k)
 // uint64_t *ret: pointer to which to write selected elements
 
-int simd_sample_get_version();
-int simd_sample_get_major_version();
-int simd_sample_get_minor_version();
-int simd_sample_get_revision_version();
+SIMD_SAMPLING_API int simd_sample_get_version();
+SIMD_SAMPLING_API int simd_sample_get_major_version();
+SIMD_SAMPLING_API int simd_sample_get_minor_version();
+SIMD_SAMPLING_API int simd_sample_get_revision_version();
 
 #ifdef __cplusplus
 } // extern C
@@ -62,7 +67,7 @@ template<> inline uint64_t sample<float>(const float *weights, size_t n, uint64_
 
 template<typename Container, typename=typename std::enable_if<!std::is_pointer<Container>::value>::type>
 static INLINE uint64_t sample(const Container &x, uint64_t seed=0, enum SampleFmt fmt=NEITHER) {
-    return simd_sample(x.data(), x.size(), seed);
+    return sample(x.data(), x.size(), seed);
 }
 
 // Sample k
@@ -95,8 +100,12 @@ template<typename T>
 INLINE int sample_k(const T *weights, size_t n, int k, uint64_t *ret, uint64_t seed=0, enum SampleFmt fmt=NEITHER) {
     throw std::runtime_error("Not Implemented");
 }
-template<> int sample_k<double>(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt);
-template<> int sample_k<float>(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt);
+template<> inline int sample_k<double>(const double *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt) {
+    return dsimd_sample_k(weights, n, k, ret, seed, fmt);
+}
+template<> inline int sample_k<float>(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, enum SampleFmt fmt) {
+    return fsimd_sample_k(weights, n, k, ret, seed, fmt);
+}
 
 } // namespace reservoir_simd
 
