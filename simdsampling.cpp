@@ -16,6 +16,26 @@
 #endif
 #include "reservoir.h"
 
+#if SIMD_SAMPLING_HIGH_PRECISION
+#  ifndef Sleef_logd2_u35
+#    define Sleef_logd2_u35 Sleef_logd2_u10
+#  endif
+#  ifndef Sleef_logd4_u35
+#    define Sleef_logd4_u35 Sleef_logd4_u10
+#  endif
+#  ifndef Sleef_logd8_u35
+#    define Sleef_logd8_u35 Sleef_logd8_u10
+#  endif
+#  ifndef Sleef_logf4_u35
+#    define Sleef_logf4_u35 Sleef_logf4_u10
+#  endif
+#  ifndef Sleef_logf8_u35
+#    define Sleef_logf8_u35 Sleef_logf8_u10
+#  endif
+#  ifndef Sleef_logf16_u35
+#    define Sleef_logf16_u35 Sleef_logf16_u10
+#  endif
+#endif
 
 #ifdef __AVX512F__
 #define SIMD_SAMPLING_ALIGNMENT (sizeof(__m512) / sizeof(char))
@@ -1244,6 +1264,15 @@ namespace reservoir_simd {
 
 
 }
+
+#if SIMD_SAMPLING_HIGH_PRECISION
+#undef Sleef_logd2_u35
+#undef Sleef_logd4_u35
+#undef Sleef_logd8_u35
+#undef Sleef_logf4_u35
+#undef Sleef_logf8_u35
+#undef Sleef_logf16_u35
+#endif
 
 extern "C" {
 
