@@ -244,6 +244,8 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         __m512d ov = load<aln>((const double *)&weights[o * nperel]);
         auto divv = _mm512_div_pd(v3, ov);
         auto cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ);
+        // TODO: replace with a switch-based unrolled loop on popcount(cmpmask), since
+        //       there are only 8
         if(cmpmask) {
             auto newmaxv = _mm512_set1_pd(_mm512_reduce_max_pd(divv));
             if((cmpmask = _mm512_cmp_pd_mask(divv, newmaxv, _CMP_EQ_OQ))) {
@@ -265,7 +267,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 #elif __AVX2__
     constexpr size_t nperel = sizeof(__m256d) / sizeof(double);
     const size_t e = (n / nperel);
-    constexpr double pdmul = 1. / (1ull<<52);
+    constexpr double pdmul = 1. / (1ull << 52);
     __m256d vmaxv = _mm256_set1_pd(-std::numeric_limits<double>::max());
     using simdpcg_t = avx256_pcg32_random_t;
     auto init = [&](simdpcg_t &x) {
@@ -709,7 +711,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         if(cmpmask) {
             for(;;) {
                 auto ind = ctz(cmpmask);
-                pq.add(((double *)&divv)[ind], ind + o * nperel);
+                pq.add(divv[ind], ind + o * nperel);
                 cmpmask ^= (1 << ind);
                 if(cmpmask == 0) {
                     vmaxv = _mm512_set1_pd(pq.top().first);
@@ -766,7 +768,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         if(cmpmask) {
             for(;;) {
                 auto ind = ctz(cmpmask);
-                pq.add(((double *)&divv)[ind], ind + o * nperel);
+                pq.add(divv[ind], ind + o * nperel);
                 cmpmask ^= (1 << ind);
                 if(!cmpmask) {
                     vmaxv = _mm256_set1_pd(pq.top().first);
@@ -802,18 +804,18 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         auto divv = _mm_div_pd(v5, ov6);
         auto cmp = _mm_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
         const auto cmpmask = _mm_movemask_pd(cmp);
-        if(cmpmask) {
-            switch(cmpmask) {
-            case 1:
-                pq.add(((double *)&divv)[0], o * nperel); break;
-            case 2:
-                pq.add(((double *)&divv)[1], o * nperel + 1); break;
-            case 3:
-                pq.add(((double *)&divv)[0], o * nperel);
-                pq.add(((double *)&divv)[1], o * nperel + 1); break;
-            }
-            vmaxv = _mm_set1_pd(pq.top().first);
+        switch(cmpmask) {
+        default: __builtin_unreachable();
+        case 0: continue;
+        case 1:
+            pq.add(divv[0], o * nperel); break;
+        case 2:
+            pq.add(divv[1], o * nperel + 1); break;
+        case 3:
+            pq.add(divv[0], o * nperel);
+            pq.add(divv[1], o * nperel + 1); break;
         }
+        vmaxv = _mm_set1_pd(pq.top().first);
     }
     auto &pq = OMP_ELSE(pqs[0], basepq);
     for(size_t p = e * nperel; p != n; ++p) {
@@ -867,6 +869,8 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
             rpq.pop();
         }
         std::copy(ret, ret + be, rettmp.get());
+#define CASE_N(x) \
+                            case x: {auto ind = ctz(cmpmask); if(divv[ind] > tmp[i]) {rettmp[i] = ret[ind + simdidx * nperel]; tmp[i] = divv[ind];} cmpmask ^= (1 << ind);} break;
         // Now, adapt sampling without replacement
         // to consider replacement
         OMP_PFOR
@@ -906,15 +910,17 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
                     auto divv = _mm512_div_pd(v3, ov);
                     auto cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ);
                     if(cmpmask) {
-                        for(;;) {
-                            auto ind = ctz(cmpmask);
-                            tmp[i] = divv[ind];
-                            rettmp[i] = ret[ind + simdidx * nperel];
-                            if((cmpmask ^= (1 << ind)) == 0) {
-                                vmaxv = _mm512_set1_pd(tmp[i]);
-                                break;
-                            }
+                        switch(__builtin_popcount(cmpmask)) {
+                           CASE_N(8)
+                           CASE_N(7)
+                           CASE_N(6)
+                           CASE_N(5)
+                           CASE_N(4)
+                           CASE_N(3)
+                           CASE_N(2)
+                           CASE_N(1)
                         }
+                        vmaxv = _mm512_set1_pd(tmp[i]);
                     }
 #elif __AVX2__
                     __m256i v = _mm256_set_m128i(avx256_pcg32_random_r(rngptr), avx256_pcg32_random_r(rngptr));
@@ -927,16 +933,13 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
                     auto cmp = _mm256_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
                     auto cmpmask = _mm256_movemask_pd(cmp);
                     if(cmpmask) {
-                        for(;;) {
-                            auto ind = ctz(cmpmask);
-                            if(divv[ind] > tmp[i])
-                                tmp[i] = divv[ind], rettmp[i] = ind + simdidx * nperel;
-                            cmpmask ^= (1 << ind);
-                            if(!cmpmask) {
-                                vmaxv = _mm256_set1_pd(tmp[i]);
-                                break;
-                            }
+                        switch(__builtin_popcount(cmpmask)) {
+                               CASE_N(4)
+                               CASE_N(3)
+                               CASE_N(2)
+                               CASE_N(1)
                         }
+                        vmaxv = _mm256_set1_pd(tmp[i]);
                     }
 #endif
                 }
@@ -1196,16 +1199,25 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
                 auto divv = _mm512_div_ps(v5, lv);
                 auto cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ);
                 if(cmpmask) {
-                    for(;;) {
-                        auto ind = ctz(cmpmask);
-                        if(divv[ind] > tmp[i])
-                            tmp[i] = divv[ind], rettmp[i] = ind + simdidx * nperel;
-                        cmpmask ^= (1 << ind);
-                        if(!cmpmask) {
-                            vmaxv = _mm512_set1_ps(tmp[i]);
-                            break;
-                        }
+                    switch(__builtin_popcount(cmpmask)) {
+                       CASE_N(16)
+                       CASE_N(15)
+                       CASE_N(14)
+                       CASE_N(13)
+                       CASE_N(12)
+                       CASE_N(11)
+                       CASE_N(10)
+                       CASE_N(9)
+                       CASE_N(8)
+                       CASE_N(7)
+                       CASE_N(6)
+                       CASE_N(5)
+                       CASE_N(4)
+                       CASE_N(3)
+                       CASE_N(2)
+                       CASE_N(1)
                     }
+                    vmaxv = _mm512_set1_ps(tmp[i]);
                 }
 #else
 #if USE_AVX256_RNG
@@ -1221,17 +1233,17 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
                 auto cmp = _mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
                 auto cmpmask = _mm256_movemask_ps(cmp);
                 if(cmpmask) {
-                    for(;;) {
-                        auto ind = ctz(cmpmask);
-                        if(divv[ind] > tmp[i]) {
-                            tmp[i] = divv[ind], rettmp[i] = ind + simdidx * nperel;
-                        }
-                        cmpmask ^= (1 << ind);
-                        if(!cmpmask) {
-                            vmaxv = _mm256_set1_ps(tmp[i]);
-                            break;
-                        }
+                    switch(__builtin_popcount(cmpmask)) {
+                       CASE_N(8)
+                       CASE_N(7)
+                       CASE_N(6)
+                       CASE_N(5)
+                       CASE_N(4)
+                       CASE_N(3)
+                       CASE_N(2)
+                       CASE_N(1)
                     }
+                    vmaxv = _mm256_set1_ps(tmp[i]);
                 }
 #endif
                 }
