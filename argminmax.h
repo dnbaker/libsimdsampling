@@ -73,16 +73,18 @@ static inline uint64_t argsel(const T *weights, size_t n, ArgReduction ar, int m
 template<> inline uint64_t argsel<double>(const double *weights, size_t n, ArgReduction ar, int mt) {
     return dargsel(weights, n, ar, mt);
 }
+
 template<> inline uint64_t argsel<float>(const float *weights, size_t n, ArgReduction ar, int mt) {
     return fargsel(weights, n, ar, mt);
 }
 
-template<typename T>
-static inline uint64_t argmax(const T *weights, size_t n, int mt) {
+
+
+template<typename T> inline uint64_t argmax(const T *weights, size_t n, int mt) {
     return std::max_element(weights, weights + n) - weights;
 }
-template<typename T>
-static inline uint64_t argmin(const T *weights, size_t n, int mt) {
+
+template<typename T> inline uint64_t argmin(const T *weights, size_t n, int mt) {
     return std::min_element(weights, weights + n) - weights;
 }
 
@@ -98,14 +100,22 @@ template<> inline uint64_t argmax<double>(const double *weights, size_t n, int m
 template<> inline uint64_t argmax<float>(const float *weights, size_t n, int mt) {
     return fargsel(weights, n, ARGMAX, mt);
 }
+
 template<typename Container, typename=typename std::enable_if<!std::is_pointer<typename std::decay<Container>::type>::value>::type>
 INLINE uint64_t argmax(const Container &x, bool mt) {
     return argmax(x.data(), x.size(), mt);
 }
-
+template<typename Container, typename=typename std::enable_if<!std::is_pointer<typename std::decay<Container>::type>::value>::type>
+INLINE uint64_t argmax(const Container &x) {
+    return argmax(x.data(), x.size(), true);
+}
 template<typename Container, typename=typename std::enable_if<!std::is_pointer<typename std::decay<Container>::type>::value>::type>
 INLINE uint64_t argmin(const Container &x, bool mt) {
     return argmin(x.data(), x.size(), mt);
+}
+template<typename Container, typename=typename std::enable_if<!std::is_pointer<typename std::decay<Container>::type>::value>::type>
+INLINE uint64_t argmin(const Container &x) {
+    return argmin(x.data(), x.size(), true);
 }
 
 template<typename T>
