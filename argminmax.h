@@ -65,7 +65,7 @@ SIMD_SAMPLING_API ptrdiff_t fargmax_k(const float *weights, size_t n, ptrdiff_t 
 
 namespace reservoir_simd {
 template<typename T>
-static inline uint64_t argsel(const T *weights, size_t n, ArgReduction ar, int mt=false) {
+static inline uint64_t argsel(const T *weights, size_t n, ArgReduction ar, int mt) {
     return (ar == ARGMIN ? std::min_element(weights, weights + n)
                          : std::max_element(weights, weights + n))
            - weights;
@@ -78,11 +78,11 @@ template<> inline uint64_t argsel<float>(const float *weights, size_t n, ArgRedu
 }
 
 template<typename T>
-static inline uint64_t argmax(const T *weights, size_t n, int mt=false) {
+static inline uint64_t argmax(const T *weights, size_t n, int mt) {
     return std::max_element(weights, weights + n) - weights;
 }
 template<typename T>
-static inline uint64_t argmin(const T *weights, size_t n, int mt=false) {
+static inline uint64_t argmin(const T *weights, size_t n, int mt) {
     return std::min_element(weights, weights + n) - weights;
 }
 
@@ -98,18 +98,18 @@ template<> inline uint64_t argmax<double>(const double *weights, size_t n, int m
 template<> inline uint64_t argmax<float>(const float *weights, size_t n, int mt) {
     return fargsel(weights, n, ARGMAX, mt);
 }
-template<typename Container>
-INLINE uint64_t argmax(const Container &x, bool mt=false) {
+template<typename Container, typename=typename std::enable_if<!std::is_pointer<typename std::decay<Container>::type>::value>::type>
+INLINE uint64_t argmax(const Container &x, bool mt) {
     return argmax(x.data(), x.size(), mt);
 }
 
-template<typename Container>
-INLINE uint64_t argmin(const Container &x, bool mt=false) {
+template<typename Container, typename=typename std::enable_if<!std::is_pointer<typename std::decay<Container>::type>::value>::type>
+INLINE uint64_t argmin(const Container &x, bool mt) {
     return argmin(x.data(), x.size(), mt);
 }
 
 template<typename T>
-INLINE ptrdiff_t argsel(T *ptr, size_t n, ptrdiff_t k, uint64_t *ret, ArgReduction ar, bool mt=false) {
+INLINE ptrdiff_t argsel(T *ptr, size_t n, ptrdiff_t k, uint64_t *ret, ArgReduction ar, bool mt) {
     if(mt) throw std::invalid_argument("mt only available for float/double");
     if(ar == ARGMAX) {
         std::priority_queue<std::pair<T, ptrdiff_t>, std::vector<std::pair<T, ptrdiff_t>>, std::greater<std::pair<T, ptrdiff_t>>> pq;
