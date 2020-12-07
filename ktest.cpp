@@ -45,7 +45,6 @@ int main(int argc, char **argv) {
 #if 1
     for(const auto v: sel2) {
         ++m2[v];
-        std::fprintf(stderr, "v = %zu, current count = %u\n", size_t(v), m2[v]);
     }
 #endif
     for(const auto v: sel4) {

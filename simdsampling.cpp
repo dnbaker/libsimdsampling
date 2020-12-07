@@ -635,14 +635,15 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
     }
     INLINE void add(std::pair<FT, uint64_t> item) {
         if(this->size() < k_) {
-            //std::fprintf(stderr, "< n: %zu\n", this->size());
             this->push(item);
         } else if(item.first > this->top().first) {
-            //std::fprintf(stderr, "Updating!\n");
             pop_push(item);
         }
     }
     INLINE void add(FT val, uint64_t id) {add(std::pair<FT, uint64_t>(val, id));}
+    void add(const pq_t<FT> &o) {
+        for(const auto item: o.getc()) add(item);
+    }
 };
 
 template<LoadFormat aln>
@@ -857,18 +858,15 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
 #ifdef _OPENMP
     // We have to merge the priority queues
     // This could be parallelized, but let's assume k is small
-    auto &lastpq = pqs[0];
-    while(pqs.size() > 1) {
-        //std::fprintf(stderr, "size of lastpq: %zu\n", pqs.back().size());
-        for(const auto &item: pqs.back()) lastpq.add(item);
-        pqs.pop_back();
-    }
-    DBG_ONLY(std::fprintf(stderr, "lastpq has %zu items (expecting k=%d)\n", lastpq.size(), k);)
+    while(pqs.size() > 1)
+        pqs[0].add(pqs.back()), pqs.pop_back();
+    DBG_ONLY(std::fprintf(stderr, "lastpq has %zu items (expecting k=%d)\n", pqs.front().size(), k);)
 #endif
-    auto &rpq = OMP_ELSE(lastpq, basepq);
+    auto &rpq = OMP_ELSE(pqs[0], basepq);
     const size_t be = rpq.size();
     if(with_replacement) {
-#if 0
+        throw std::runtime_error("Not supported: sampling with replacement");
+        uint64_t baseseed = baserng();
         // Use cascade sampling
         auto tmp = std::unique_ptr<double[]>(new double[be]);
         auto tmpw = std::unique_ptr<double[]>(new double[be]);
@@ -882,6 +880,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
             rpq.pop();
         }
         std::copy(ret, ret + be, rettmp.get());
+#if 0
 #define CASE_N(x) \
                             case x: {auto ind = ctz(cmpmask); if(divv[ind] > tmp[i]) {rettmp[i] = ret[ind + simdidx * nperel]; tmp[i] = divv[ind];} cmpmask ^= (1 << ind);} FALLTHROUGH
 #define CASE_8 CASE_N(8) CASE_N(7) CASE_N(6) CASE_N(5) CASE_N(4) CASE_N(3) CASE_N(2) CASE_N(1)
@@ -959,11 +958,21 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         }
         std::copy(rettmp.get(), rettmp.get() + be, ret);
 #endif
-        throw std::runtime_error("Not supported: Sampling k with replacement. Cascade sampling needs more debugging.");
+        for(size_t i = 1; i < be; ++i) {
+            thread_local wy::WyRand<uint64_t> rng(baseseed + std::hash<std::thread::id>()(std::this_thread::get_id()));
+            std::uniform_real_distribution<double> urd;
+            auto diff = -tmp[i] + tmp[i - 1];
+            for(size_t j = 0; j < i; ++j) {
+                auto v = -std::log(urd(rng)) / weights[ret[j]];
+                if(v < diff) {
+                    rettmp[i] = ret[j];
+                    tmp[i] = diff - v;
+                }
+            }
+        }
     } else {
         for(size_t i = 0; i < be; ++i) {
-            ret[be - i - 1] = rpq.top().second;
-            rpq.pop();
+            ret[i] = rpq.getc()[i].second;
         }
     }
 
@@ -1111,8 +1120,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
         auto v3 = Sleef_logf8_u35(v2);
         __m256 ov6 = load<aln>((const float *) &weights[o * nperel]);
         auto divv = _mm256_div_ps(v3, ov6);
-        auto cmp = _mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
-        auto cmpmask = _mm256_movemask_ps(cmp);
+        auto cmpmask = _mm256_movemask_ps(_mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ));
         if(cmpmask) {
             switch(__builtin_popcount(cmpmask)) {
                 case 8: {auto ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH
@@ -1150,15 +1158,15 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
     // This could be parallelized, but let's assume k is small
     auto &lastpq = pqs[0];
     while(pqs.size() > 1) {
-        for(const auto item: pqs.back().getc())
-            lastpq.add(item);
+        lastpq.add(pqs.back());
         pqs.pop_back();
     }
-    DBG_ONLY(std::fprintf(stderr, "lastpq has %zu items (expecting k=%d)\n", lastpq.size(), k);)
 #endif
     auto &rpq = OMP_ELSE(lastpq, basepq);
     const size_t be = rpq.size();
     if(with_replacement) {
+        throw std::runtime_error("Not supported: sampling with replacement");
+#if 0
         // Use cascade sampling
         auto tmp = std::unique_ptr<float[]>(new float[be]);
         auto tmpw = std::unique_ptr<float[]>(new float[be]);
@@ -1180,7 +1188,6 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
         auto baseseed = baserng();
         OMP_PFOR
         for(size_t i = 1; i < be; ++i) {
-#if 0
             size_t j = 0;
 #if __AVX2__ || __AVX512F__
             if(i > nperel * 4) {
@@ -1238,20 +1245,18 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
                     rettmp[i] = ret[j];
                 }
             }
-#endif
             thread_local wy::WyRand<uint64_t> rng(baseseed + std::hash<std::thread::id>()(std::this_thread::get_id()));
             std::uniform_real_distribution<float> urd;
             auto diff = -tmp[i] + tmp[i - 1];
             for(size_t j = 0; j < i; ++j) {
                 auto v = -std::log(urd(rng)) / weights[ret[j]];
                 if(v < diff) {
-                    OMP_CRITICAL
                     rettmp[i] = ret[j];
-                    tmp[i] = v - diff;
+                    tmp[i] = diff - v;
                 }
             }
         }
-        std::copy(rettmp.get(), rettmp.get() + be, ret);
+#endif
     } else {
         auto tmpp = ret;
         for(const auto &item: rpq.getc()) *tmpp++ = item.second;
