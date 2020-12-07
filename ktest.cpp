@@ -1,6 +1,8 @@
 #include "simdsampling.h"
 #include <map>
 #include <cmath>
+#include <cassert>
+#include <getopt.h>
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -18,30 +20,32 @@ int main(int argc, char **argv) {
     std::fprintf(stderr, "No OpenMP\n");
 #endif
     uint64_t seed = 0;
-    int k = 5;
-    if(argc > 1) {
-        seed = std::atoi(argv[1]);
-    }
-    if(argc > 2) {
-        k = std::atoi(argv[2]);
-    }
+    unsigned int k = 5;
+    int n = 100;
+    for(int c;(c = getopt(argc, argv, "k:n:s:h?")) >= 0;) { switch(c) {
+        case 'h': std::fprintf(stderr, "Usage: %s [flags]\n-k:k\n-n:n\t-s: seed\n", *argv); return 1;
+        case 'k': k = std::atoi(optarg); break;
+        case 'n': n = std::atoi(optarg); break;
+        case 's': seed = std::strtoull(optarg, nullptr, 10); break;
+    }}
+
     std::fprintf(stderr, "Selecting k = %d\n", k);
-    const int n = 100000;
     double *ptr = new double[n];
-    for(int i = 0; i < n; ++i) {
-        ptr[i] = 1.;
-    }
+    std::fill(ptr, ptr + n, 1.);
     auto sel = reservoir_simd::sample_k(ptr, n, k, seed);
-    auto sel2 = reservoir_simd::sample_k(ptr, n, k * 10, seed + 1, WITH_REPLACEMENT);
+    auto sel2 = reservoir_simd::sample_k(ptr, n, k * 3, seed + 1, WITH_REPLACEMENT);
     for(const auto v: sel) std::fprintf(stderr, "%u\n", (int)v);
-    for(int i = 0; i < n * 2; ++i)
-        ((float *)ptr)[i] = 1.;
-    auto sel3 = reservoir_simd::sample_k((float *)ptr, n * 2, k, seed);
-    auto sel4 = reservoir_simd::sample_k((float *)ptr, n * 2, k * 10, seed + 1, WITH_REPLACEMENT);
+    std::fill((float *)ptr, (float *)ptr + n, 1.);
+    auto sel3 = reservoir_simd::sample_k((float *)ptr, n, k, seed);
+    auto sel4 = reservoir_simd::sample_k((float *)ptr, n, k * 3, seed + 1, WITH_REPLACEMENT);
+    size_t nex = k * 3;
+    for(size_t i = 0; i < nex; ++i) std::fprintf(stderr, "fsel[%zu] = %zu\n", i, size_t(sel4[i]));
+    for(size_t i = 0; i < nex; ++i) std::fprintf(stderr, "dsel[%zu] = %zu\n", i, size_t(sel2[i]));
     std::map<uint64_t, uint32_t> m, m2;
 #if 1
     for(const auto v: sel2) {
         ++m2[v];
+        std::fprintf(stderr, "v = %zu, current count = %u\n", size_t(v), m2[v]);
     }
 #endif
     for(const auto v: sel4) {
@@ -53,4 +57,8 @@ int main(int argc, char **argv) {
     for(const auto &pair: mc) std::fprintf(stderr, "%u:%u\n", int(pair.first), pair.second);
     for(const auto &pair: mc2) std::fprintf(stderr, "[double]%u:%u\n", int(pair.first), pair.second);
     delete[] ptr;
+    assert(sel3.size() == k);
+    assert(sel.size() == k);
+    assert(sel4.size() == unsigned(k * 3) || n < int(k * 3));
+    assert(sel2.size() == k * 3);
 }
