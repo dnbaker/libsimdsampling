@@ -421,9 +421,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     std::vector<wy::WyRand<uint64_t>> rngs(nt);
     for(auto &i: rngs) i.seed(baserng());
 #endif
-#if defined(__AVX512F__) || defined(__AVX2__)
     constexpr float psmul = 1. / (1ull<<29);
-#endif
 #ifdef __AVX512F__
     #if __AVX512DQ__
     using simdpcg_t = avx512_pcg32_random_t;
@@ -766,7 +764,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         const __m512d v3 = Sleef_logd8_u35(v2);
         // Log-transform the [0, 1] sampling
         __m512d ov = load<aln>((const double *)&weights[o * nperel]);;
-        auto divv = _mm512_xor_pd(_mm512_div_pd(v3, ov), _mm512_set1_pd(-0.0));
+        auto divv = -_mm512_div_pd(v3, ov);
         int cmpmask;
         if(pq.size() < pq.k_ || (cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, CMPGQINT)) == 0xFFu) {
             #pragma GCC unroll 8
@@ -848,6 +846,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
     const size_t e = n / nperel;
     double maxv = -std::numeric_limits<double>::max();
     __m128d vmaxv = _mm_set1_pd(maxv);
+    constexpr double pdmul = 1. / (1ull<<52);
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
         OMP_ONLY(const int tid = omp_get_thread_num();)
@@ -1019,13 +1018,14 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
         __m512 v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         __m512 v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
-        auto divv = _mm512_xor_ps(_mm512_div_ps(v5, lv), _mm512_set1_ps(-0.0));
+        auto divv = _mm512_div_ps(v5, lv);
         int cmpmask;
         if(pq.size() < pq.k_ || (cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, CMPGQINT)) == 0xFFFFu) {
             #pragma GCC unroll 16
             for(unsigned i = 0; i < 16u; ++i)
                 pq.add(divv[i], i + o * nperel);
         } else if(cmpmask) {
+            int ind;
             switch(__builtin_popcount(cmpmask)) {
                 case 15: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
                 case 14: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
