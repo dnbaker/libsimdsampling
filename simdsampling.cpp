@@ -88,6 +88,8 @@ template<LoadFormat aln> SIMD_SAMPLING_API int double_simd_sample_k_fmt(const do
 template<LoadFormat aln> SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 template<LoadFormat aln> SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, int k, uint64_t *ret, uint64_t seed, int with_replacement);
 
+using ssize_t = typename std::make_signed<size_t>::type;
+
 extern "C" {
 SIMD_SAMPLING_API uint64_t dsimd_sample(const double *weights, size_t n, uint64_t seed, enum SampleFmt fmt)
 {
@@ -616,7 +618,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
 }
 
 template<typename FT>
-struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std::pair<FT, uint64_t>>, std::greater<std::pair<FT, uint64_t>>> {
+struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std::pair<FT, uint64_t>>, std::less<std::pair<FT, uint64_t>>> {
     using value_t = std::pair<FT, uint64_t>;
     using vec_t = std::vector<std::pair<FT, uint64_t>>;
     uint32_t k_;
@@ -636,10 +638,9 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
         this->pop(); this->push(std::forward<Args>(args)...);
     }
     INLINE void add(std::pair<FT, uint64_t> item) {
-        if(this->size() < k_) {
-            this->push(item);
-        } else if(item.first > this->top().first) {
-            pop_push(item);
+        if(this->size() < k_) this->push(item);
+        else {
+            if(item.first < this->top().first) pop_push(item);
         }
     }
     INLINE void add(FT val, uint64_t id) {add(std::pair<FT, uint64_t>(val, id));}
@@ -647,6 +648,8 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
         for(const auto item: o.getc()) add(item);
     }
 };
+
+constexpr const int CMPGQINT = _CMP_LT_OQ;
 
 template<typename FT>
 void reduce_pqs(std::vector<pq_t<FT>> &pqs) {
@@ -763,9 +766,9 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         const __m512d v3 = Sleef_logd8_u35(v2);
         // Log-transform the [0, 1] sampling
         __m512d ov = load<aln>((const double *)&weights[o * nperel]);;
-        auto divv = _mm512_div_pd(v3, ov);
+        auto divv = _mm512_xor_pd(_mm512_div_pd(v3, ov), _mm512_set1_pd(-0.0));
         int cmpmask;
-        if(pq.size() < pq.k_ || (cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, _CMP_GT_OQ)) == 0xFFu) {
+        if(pq.size() < pq.k_ || (cmpmask = _mm512_cmp_pd_mask(divv, vmaxv, CMPGQINT)) == 0xFFu) {
             #pragma GCC unroll 8
             for(unsigned i = 0; i < 8; ++i)
                 pq.add(divv[i], i + o * nperel);
@@ -785,7 +788,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
     auto &pq = OMP_ELSE(pqs[0], basepq);
     for(size_t p = e * nperel; p != n; ++p)
         if(weights[p] > 0.)
-            pq.add(std::log(std::uniform_real_distribution<double>()(baserng)) / weights[p], p);
+            pq.add(-std::log(std::uniform_real_distribution<double>()(baserng)) / weights[p], p);
 #elif __AVX2__
     constexpr size_t nperel = sizeof(__m256d) / sizeof(double);
     const size_t e = (n / nperel);
@@ -821,9 +824,9 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         auto v2 = _mm256_or_si256(_mm256_srli_epi64(v, 12), _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)));
         auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
         auto v5 = Sleef_logd4_u35(_mm256_mul_pd(v3, _mm256_set1_pd(pdmul)));
-        auto divv = _mm256_div_pd(v5, load<aln>((const double *)&weights[onp]));
+        auto divv = _mm256_xor_pd(_mm256_div_pd(v5, load<aln>((const double *)&weights[onp])), _mm256_set1_pd(-0.0));
         int cmpmask;
-        if(pq.size() < pq.k_ || (cmpmask = _mm256_movemask_pd(_mm256_cmp_pd(divv, vmaxv, _CMP_GT_OQ))) == 0xFu) {
+        if(pq.size() < pq.k_ || (cmpmask = _mm256_movemask_pd(_mm256_cmp_pd(divv, vmaxv, CMPGQINT))) == 0xFu) {
             pq.add(divv[0], onp); pq.add(divv[1], onp + 1); pq.add(divv[2], onp + 2); pq.add(divv[3], onp + 3);
         } else if(cmpmask) {
             switch(__builtin_popcount(cmpmask)) {
@@ -838,7 +841,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
     for(size_t p = e * nperel; p != n; ++p) {
         std::uniform_real_distribution<double> urd;
         if(weights[p] > 0.)
-            pq.add(std::log(urd(baserng)) / weights[p], p);
+            pq.add(-std::log(urd(baserng)) / weights[p], p);
     }
 #elif __AVX__
     constexpr size_t nperel = sizeof(__m128d) / sizeof(double);
@@ -858,10 +861,9 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         auto v3 = _mm_sub_pd(_mm_castsi128_pd(v2), _mm_set1_pd(0x0010000000000000));
         auto v4 = _mm_mul_pd(v3, _mm_set1_pd(pdmul));
         auto v5 = Sleef_logd2_u35(v4);
-        __m128d ov6 = load<aln>((const double *) &weights[onp]);
-        auto divv = _mm_div_pd(v5, ov6);
+        auto divv = _mm_xor_pd(_mm_div_pd(v5, load<aln>((const double *) &weights[onp])), _mm_set1_pd(-0.0));
         int cmpmask;
-        if(pq.size() < pq.k_ || (cmpmask = _mm_movemask_pd(_mm_cmp_pd(divv, vmaxv, _CMP_GT_OQ))) == 3u) {
+        if(pq.size() < pq.k_ || (cmpmask = _mm_movemask_pd(_mm_cmp_pd(divv, vmaxv, CMPGQINT))) == 3u) {
             pq.add(divv[0], onp);
             pq.add(divv[1], onp + 1);
         } else if(cmpmask) {
@@ -875,12 +877,8 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
     }
     auto &pq = OMP_ELSE(pqs[0], basepq);
     for(size_t p = e * nperel; p != n; ++p) {
-        if(weights[p]) {
-            std::uniform_real_distribution<double> urd;
-            auto v = std::log(urd(baserng)) / weights[p];
-            if(v > pq.top().first)
-                pq.add(v, p);
-        }
+        if(weights[p])
+            pq.add(-std::log(std::uniform_real_distribution<double>()(baserng)) / weights[p], p);
     }
 #else
     OMP_PFOR
@@ -889,7 +887,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         auto &rng = OMP_ELSE(rngs[i], baserng);
         auto &pq = OMP_ELSE(pqs[tid], basepq);
         if(weights[i] > 0.)
-            pq.add(std::log(std::uniform_real_distribution<double>()(rng)) / weights[i], i);
+            pq.add(-std::log(std::uniform_real_distribution<double>()(rng)) / weights[i], i);
     }
 #endif
 #ifdef _OPENMP
@@ -900,41 +898,48 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
 #endif
     auto &rpq = OMP_ELSE(pqs[0], basepq);
     const size_t be = rpq.size();
+    int nret;
     if(with_replacement) {
-        uint64_t baseseed = baserng();
-        // Use cascade sampling
         auto tmp = std::unique_ptr<double[]>(new double[be]);
         auto tmpw = std::unique_ptr<double[]>(new double[be]);
-        auto rettmp = std::unique_ptr<uint64_t[]>(new uint64_t[be]);
         if(unlikely(tmp == nullptr)) throw std::bad_alloc();
         for(size_t i = 0; i < be; ++i) {
             const auto ind = be - i - 1;
-            ret[ind] = rpq.top().second;
-            tmp[ind] = rpq.top().first;
-            tmpw[ind] = weights[ret[ind]];
+            const auto rrank = rpq.top().first;
+            const auto rind = rpq.top().second;
+            ret[ind] = rind;
+            tmp[ind] = rrank;
+            tmpw[ind] = weights[rind];
             rpq.pop();
         }
+        auto rettmp = std::unique_ptr<uint64_t[]>(new uint64_t[be]);
+        auto rtmp = std::unique_ptr<double[]>(new double[be]);
         std::copy(ret, ret + be, rettmp.get());
-        for(size_t i = 1; i < be; ++i) {
+        std::copy(tmp.get(), tmp.get() + be, rtmp.get());
+        const uint64_t baseseed = OMP_ELSE(rngs.front(), baserng)();
+        OMP_PFOR
+        for(ssize_t i = 1; i < k; ++i) {
             thread_local wy::WyRand<uint64_t> rng(baseseed + std::hash<std::thread::id>()(std::this_thread::get_id()));
             std::uniform_real_distribution<double> urd;
-            auto diff = -tmp[i] + tmp[i - 1];
-            for(size_t j = 0; j < i; ++j) {
+            double diff = (i < ssize_t(be)) ? tmp[i] - tmp[i - 1]: rtmp[i] - rtmp[i - 1];
+            for(ssize_t j = 0; j < i; ++j) {
                 auto v = -std::log(urd(rng)) / weights[ret[j]];
                 if(v < diff) {
                     rettmp[i] = ret[j];
-                    tmp[i] = diff - v;
+                    rtmp[i] = diff - v;
+                    diff -= v;
                 }
             }
         }
+        nret = k;
     } else {
         for(size_t i = 0; i < be; ++i) {
             ret[i] = rpq.getc()[i].second;
         }
+        nret = be;
     }
-
-    std::sort(ret, ret + be);
-    return static_cast<int>(be);
+    std::sort(ret, ret + nret);
+    return nret;
 }
 
 template<LoadFormat aln>
@@ -956,7 +961,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
     pq_t<float> basepq(k);
 #endif
 #if __cplusplus >= 201703L
-    static constexpr float psmul =0x1p-29;
+    static constexpr float psmul = 0x1p-29;
 #else
     static constexpr float psmul = 1. / (1<<29);
 #endif
@@ -996,7 +1001,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
     }
     constexpr size_t nperel = sizeof(__m512) / sizeof(float);
     const size_t e = n / nperel;
-    __m512 vmaxv = _mm512_set1_ps(-std::numeric_limits<float>::max());
+    __m512 vmaxv = _mm512_set1_ps(std::numeric_limits<float>::max());
 
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
@@ -1014,17 +1019,29 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
         __m512 v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
         __m512 v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
-        auto divv = _mm512_div_ps(v5, lv);
+        auto divv = _mm512_xor_ps(_mm512_div_ps(v5, lv), _mm512_set1_ps(-0.0));
         int cmpmask;
-        if(pq.size() < pq.k_ || (cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ)) == 0xFFFFu) {
+        if(pq.size() < pq.k_ || (cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, CMPGQINT)) == 0xFFFFu) {
             #pragma GCC unroll 16
             for(unsigned i = 0; i < 16u; ++i)
                 pq.add(divv[i], i + o * nperel);
-            vmaxv = _mm256_set1_ps(pq.top().first);
-            continue;
         } else if(cmpmask) {
             switch(__builtin_popcount(cmpmask)) {
-                CASE_16
+                case 15: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 14: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 13: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 12: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 11: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 10: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 9: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 8: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 7: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 6: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 5: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 4: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 3: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 2: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
+                case 1: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel);}
             }
         } else continue;
         vmaxv = _mm512_set1_ps(pq.top().first);
@@ -1032,12 +1049,12 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
     auto &pq = OMP_ELSE(pqs[0], basepq);
     for(size_t p = e * nperel; p != n; ++p) {
         if(weights[p] > 0.)
-            pq.add(std::log(std::uniform_real_distribution<float>()(baserng)) / weights[p], p);
+            pq.add(-std::log(std::uniform_real_distribution<float>()(baserng)) / weights[p], p);
     }
 #elif __AVX2__
     constexpr size_t nperel = sizeof(__m256) / sizeof(float);
     const size_t e = (n / nperel);
-    __m256 vmaxv = _mm256_set1_ps(-std::numeric_limits<float>::max());
+    __m256 vmaxv = _mm256_set1_ps(std::numeric_limits<float>::max());
 #ifdef USE_AVX256_RNG
     using simdpcg_t = avx256_pcg32_random_t;
     auto init = [&](simdpcg_t &x) {
@@ -1083,9 +1100,9 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
         auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
         auto v3 = Sleef_logf8_u35(v2);
         __m256 ov6 = load<aln>((const float *) &weights[o * nperel]);
-        auto divv = _mm256_div_ps(v3, ov6);
+        auto divv = _mm256_xor_ps(_mm256_div_ps(v3, ov6), _mm256_set1_ps(-0.0));
         int cmpmask, ind;
-        if(pq.size() < pq.k_ || (cmpmask = _mm256_movemask_ps(_mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ))) == 0xFF) {
+        if(pq.size() < pq.k_ || (cmpmask = _mm256_movemask_ps(_mm256_cmp_ps(divv, vmaxv, CMPGQINT))) == 0xFF) {
             pq.add(divv[0], o * nperel);     pq.add(divv[1], 1 + o * nperel);
             pq.add(divv[2], 2 + o * nperel); pq.add(divv[3], 3 + o * nperel);
             pq.add(divv[4], 4 + o * nperel); pq.add(divv[5], 5 + o * nperel);
@@ -1105,16 +1122,10 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
     }
 
     auto &pq = OMP_ELSE(pqs[0], basepq);
-#ifdef _OPENMP
-    for(const auto &pq: pqs) std::fprintf(stderr, "pq size: %zu\n", pq.size());
-#else
-    std::fprintf(stderr, "pq size: %zu\n", pq.size());
-#endif
     for(size_t p = e * nperel; p != n; ++p) {
-        std::fprintf(stderr, "Current size %zu\n", pq.size());
         std::uniform_real_distribution<float> urd;
         if(weights[p] > 0.)
-            pq.add(std::log(urd(baserng)) / weights[p], p);
+            pq.add(-std::log(urd(baserng)) / weights[p], p);
     }
 #else
     OMP_PFOR
@@ -1123,7 +1134,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
         auto &rng = OMP_ELSE(rngs[tid], baserng);
         auto &pq = OMP_ELSE(pqs[tid], basepq);
         if(weights[i] > 0.)
-            pq.add(std::log((psmul * rng()) / weights[i]), i);
+            pq.add(-std::log((psmul * rng()) / weights[i]), i);
     }
 #endif
 #ifdef _OPENMP
@@ -1133,16 +1144,50 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
 #endif
     auto &rpq = OMP_ELSE(pqs.front(), basepq);
     const size_t be = rpq.size();
-    //uint64_t baseseed = baserng();
-    if(with_replacement)
-        std::fprintf(stderr, "Not implemented. Returning without replacement");
-
-    {
+    int nret;
+    if(with_replacement) {
+        auto tmp = std::unique_ptr<float[]>(new float[be]);
+        auto tmpw = std::unique_ptr<float[]>(new float[be]);
+        for(size_t i = 0; i < be; ++i) {
+            const auto ind = be - i - 1;
+            auto rrank = rpq.top().first;
+            auto rind = rpq.top().second;
+            ret[ind] = rind;
+            tmp[ind] = rrank;
+            tmpw[ind] = weights[rind];
+            rpq.pop();
+        }
+        auto rettmp = std::unique_ptr<uint64_t[]>(new uint64_t[k]);
+        auto rtmp = std::unique_ptr<float[]>(new float[k]);
+        std::copy(ret, ret + be, rettmp.get());
+        std::copy(tmp.get(), tmp.get() + be, rtmp.get());
+        const uint64_t baseseed = OMP_ELSE(rngs.front(), baserng)();
+        for(ssize_t i = 1; i < k; ++i) {
+            thread_local wy::WyRand<uint64_t> rng(baseseed + std::hash<std::thread::id>()(std::this_thread::get_id()));
+            std::uniform_real_distribution<float> urd;
+            float diff;
+            if(i < ssize_t(be)) diff = tmp[i] - tmp[i - 1];
+            else                diff = rtmp[i] - rtmp[i - 1];
+            for(ssize_t j = 0; j < i; ++j) {
+                auto v = -std::log(urd(rng)) / weights[ret[j]];
+                if(v < diff) {
+                    rettmp[i] = ret[j];
+                    rtmp[i] = diff - v;
+                    diff -= v;
+                }
+            }
+        }
+        std::copy(rettmp.get(), rettmp.get() + k, ret);
+        nret = k;
+    } else {
         auto tmpp = ret;
-        for(const auto &item: rpq.getc()) *tmpp++ = item.second;
+        for(const auto &item: rpq.getc())
+            *tmpp++ = item.second;
+        std::fill(ret + be, ret + k, uint64_t(-1));
+        nret = be;
     }
-    std::sort(ret, ret + be);
-    return static_cast<int>(be);
+    std::sort(ret, ret + nret);
+    return nret;
 }
 
 

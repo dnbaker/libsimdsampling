@@ -60,8 +60,8 @@ int main(int argc, char **argv) {
     for(const auto &pair: mc2) std::fprintf(stderr, "[double]%u:%u\n", int(pair.first), pair.second);
     delete[] ptr;
     std::fprintf(stderr, "sizes of sels: %zu, %zu, %zu, %zu\n", sel.size(), sel2.size(), sel3.size(), sel4.size());
-    assert(sel3.size() == k);
-    assert(sel.size() == k);
     assert(sel4.size() == unsigned(nex) || n < int(nex));
     assert(sel2.size() == nex || n < int(nex) || !std::fprintf(stderr, "sel.size() = %zu (vs expected) %zu\n", sel.size(), nex));
+    assert(sel.size() == size_t(std::min(int(k), n)));
+    assert(sel3.size() == size_t(std::min(int(k), n)));
 }
