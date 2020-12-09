@@ -32,15 +32,18 @@ int main(int argc, char **argv) {
     std::fprintf(stderr, "Selecting k = %d\n", k);
     double *ptr = new double[n];
     std::fill(ptr, ptr + n, 1.);
+    size_t heavyw = 100000;
+    ptr[13] = heavyw;
+    size_t nex = k * 1.1;
     auto sel = reservoir_simd::sample_k(ptr, n, k, seed);
-    auto sel2 = reservoir_simd::sample_k(ptr, n, k * 3, seed + 1, WITH_REPLACEMENT);
+    auto sel2 = reservoir_simd::sample_k(ptr, n, nex, seed + 1, WITH_REPLACEMENT);
     for(const auto v: sel) std::fprintf(stderr, "%u\n", (int)v);
     std::fill((float *)ptr, (float *)ptr + n, 1.);
+    ptr[13] = heavyw;
     auto sel3 = reservoir_simd::sample_k((float *)ptr, n, k, seed);
-    auto sel4 = reservoir_simd::sample_k((float *)ptr, n, k * 3, seed + 1, WITH_REPLACEMENT);
-    size_t nex = k * 3;
-    for(size_t i = 0; i < nex; ++i) std::fprintf(stderr, "fsel[%zu] = %zu\n", i, size_t(sel4[i]));
-    for(size_t i = 0; i < nex; ++i) std::fprintf(stderr, "dsel[%zu] = %zu\n", i, size_t(sel2[i]));
+    auto sel4 = reservoir_simd::sample_k((float *)ptr, n, nex, seed + 1, WITH_REPLACEMENT);
+    for(size_t i = 0; i < sel.size(); ++i) std::fprintf(stderr, "fsel[%zu] = %zu\n", i, size_t(sel4[i]));
+    for(size_t i = 0; i < sel2.size(); ++i) std::fprintf(stderr, "dsel[%zu] = %zu\n", i, size_t(sel2[i]));
     std::map<uint64_t, uint32_t> m, m2;
 #if 1
     for(const auto v: sel2) {
@@ -56,8 +59,9 @@ int main(int argc, char **argv) {
     for(const auto &pair: mc) std::fprintf(stderr, "%u:%u\n", int(pair.first), pair.second);
     for(const auto &pair: mc2) std::fprintf(stderr, "[double]%u:%u\n", int(pair.first), pair.second);
     delete[] ptr;
-    assert(sel3.size() == k);
-    assert(sel.size() == k);
-    assert(sel4.size() == unsigned(k * 3) || n < int(k * 3));
-    assert(sel2.size() == k * 3);
+    std::fprintf(stderr, "sizes of sels: %zu, %zu, %zu, %zu\n", sel.size(), sel2.size(), sel3.size(), sel4.size());
+    assert(sel4.size() == unsigned(nex) || n < int(nex));
+    assert(sel2.size() == nex || n < int(nex) || !std::fprintf(stderr, "sel.size() = %zu (vs expected) %zu\n", sel.size(), nex));
+    assert(sel.size() == size_t(std::min(int(k), n)));
+    assert(sel3.size() == size_t(std::min(int(k), n)));
 }
