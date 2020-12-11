@@ -1098,9 +1098,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
         __m256i v = _mm256_srli_epi32(avx2_pcg32_random_r(rngptr), 3);
 #endif
         auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
-        auto v3 = Sleef_logf8_u35(v2);
-        __m256 ov6 = load<aln>((const float *) &weights[o * nperel]);
-        auto divv = _mm256_xor_ps(_mm256_div_ps(v3, ov6), _mm256_set1_ps(-0.0));
+        const __m256 divv = -_mm256_div_ps(Sleef_logf8_u35(v2), load<aln>((const float *) &weights[o * nperel]));
         int cmpmask, ind;
         if(pq.size() < pq.k_ || (cmpmask = _mm256_movemask_ps(_mm256_cmp_ps(divv, vmaxv, CMPGQINT))) == 0xFF) {
             pq.add(divv[0], o * nperel);     pq.add(divv[1], 1 + o * nperel);
