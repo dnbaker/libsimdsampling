@@ -841,14 +841,15 @@ ptrdiff_t float_argsel_k_fmt(const float * weights, size_t n, ptrdiff_t k, uint6
             }
         }
     } else {
+        auto &pr = pqs[0];
+        #pragma GCC unroll 4
         for(size_t i = 0; i < n; ++i) {
-            if(Cmp<AR>::cmp(weights[i], pqs[0].top().first)) {
-                pqs[0].add(weights[i], i);
-                if(Cmp<AR>::cmp(weights[i], bestv))
-                    bestv = weights[i], bestind = i;
-            }
+            if(pr.size() < k || Cmp<AR>::cmp(weights[i], pr.top().first))
+                pr.add(weights[i], i);
         }
     }
+    static constexpr size_t nperel = 1;
+    const size_t e = n;
 #endif
     // TODO: parallelize merging
     auto &basepq = pqs[0];
@@ -1012,11 +1013,11 @@ double_argsel_k_fmt(const double * weights, size_t n, ptrdiff_t k, uint64_t *ret
         for(size_t i = 0; i < n; ++i) {
             if(Cmp<AR>::cmp(weights[i], pqs[0].top().first)) {
                 pqs[0].add(weights[i], i);
-                if(Cmp<AR>::cmp(weights[i], bestv))
-                    bestv = weights[i], bestind = i;
             }
         }
     }
+    const size_t e = n;
+    static constexpr size_t nperel = 1;
 #endif
     // TODO: parallelize merging
     auto &basepq = pqs[0];
