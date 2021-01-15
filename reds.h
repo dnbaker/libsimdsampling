@@ -21,6 +21,7 @@ enum LoadFormat {
     UNALIGNED
 };
 
+#if __SSE2__ || __SSE4_1__ || __SSE4__ || __SSSE3___
 template<typename Func>
 INLINE __m128 broadcast_reduce(__m128 x, const Func &func) {
     __m128 m1 = _mm_shuffle_ps(x, x, _MM_SHUFFLE(0,0,3,2));
@@ -35,6 +36,8 @@ INLINE __m128 broadcast_max(__m128 x) {
 INLINE __m128 broadcast_min(__m128 x) {
     return broadcast_reduce<decltype(_mm_min_ps)>(x, _mm_min_ps);
 }
+#endif
+#ifdef __AVX__
 template<typename Func>
 INLINE __m256 broadcast_reduce(__m256 x, const Func &func) {
     const __m256 permHalves = _mm256_permute2f128_ps(x, x, 1);
@@ -72,34 +75,19 @@ INLINE __m256d broadcast_max(__m256d x) {
 INLINE __m256d broadcast_min(__m256d x) {
     return broadcast_reduce<decltype(_mm256_min_pd)>(x, _mm256_min_pd);
 }
+#endif // #ifndef __AVX__
 #ifdef __AVX512F__
 INLINE __m512 load(const float *ptr, std::false_type) {
-#if LSS_MAX_0
-    return _mm512_max_ps(_mm512_loadu_ps(ptr), _mm512_setzero_ps());
-#else
     return _mm512_loadu_ps(ptr);
-#endif
 }
 INLINE __m512d load(const double *ptr, std::false_type) {
-#if LSS_MAX_0
-    return _mm512_max_pd(_mm512_loadu_pd(ptr), _mm512_setzero_pd());
-#else
     return _mm512_loadu_pd(ptr);
-#endif
 }
 INLINE __m512 load(const float *ptr, std::true_type) {
-#if LSS_MAX_0
-    return _mm512_max_ps(_mm512_load_ps(ptr), _mm512_setzero_ps());
-#else
     return _mm512_load_ps(ptr);
-#endif
 }
 INLINE __m512d load(const double *ptr, std::true_type) {
-#if LSS_MAX_0
-    return _mm512_max_pd(_mm512_load_pd(ptr), _mm512_setzero_pd());
-#else
     return _mm512_load_pd(ptr);
-#endif
 }
 template<LoadFormat aln>
 __m512d load(const double *ptr) {
@@ -111,32 +99,16 @@ __m512 load(const float *ptr) {
 }
 #elif defined(__AVX2__)
 INLINE __m256 load(const float *ptr, std::false_type) {
-#if LSS_MAX_0
-    return _mm256_max_ps(_mm256_loadu_ps(ptr), _mm256_setzero_ps());
-#else
     return _mm256_loadu_ps(ptr);
-#endif
 }
 INLINE __m256d load(const double *ptr, std::false_type) {
-#if LSS_MAX_0
-    return _mm256_max_pd(_mm256_loadu_pd(ptr), _mm256_setzero_pd());
-#else
     return _mm256_loadu_pd(ptr);
-#endif
 }
 INLINE __m256 load(const float *ptr, std::true_type) {
-#if LSS_MAX_0
-    return _mm256_max_ps(_mm256_load_ps(ptr), _mm256_setzero_ps());
-#else
     return _mm256_load_ps(ptr);
-#endif
 }
 INLINE __m256d load(const double *ptr, std::true_type) {
-#if LSS_MAX_0
-    return _mm256_max_pd(_mm256_load_pd(ptr), _mm256_setzero_pd());
-#else
     return _mm256_load_pd(ptr);
-#endif
 }
 template<LoadFormat aln>
 __m256 load(const float *ptr) {
@@ -161,20 +133,11 @@ INLINE __m128d load(const double *ptr, std::true_type) {
 }
 template<LoadFormat aln>
 __m128d load(const double *ptr) {
-   __m128d ret = load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-#if LSS_MAX_0
-    ret = _mm_max_pd(ret, _mm_setzero_pd());
-#endif
-    return ret;
+    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
 }
 template<LoadFormat aln>
 __m128 load(const float *ptr) {
-    return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-   __m128 ret = load(ptr, std::integral_constant<bool, aln == ALIGNED>());
-#if LSS_MAX_0
-    ret = _mm_max_ps(ret, _mm_setzero_ps());
-#endif
-    return ret;
+   return load(ptr, std::integral_constant<bool, aln == ALIGNED>());
 }
 #endif
 
