@@ -21,6 +21,7 @@ enum LoadFormat {
     UNALIGNED
 };
 
+#if __SSE2__ || __SSE4_1__ || __SSE4__ || __SSSE3___
 template<typename Func>
 INLINE __m128 broadcast_reduce(__m128 x, const Func &func) {
     __m128 m1 = _mm_shuffle_ps(x, x, _MM_SHUFFLE(0,0,3,2));
@@ -35,6 +36,8 @@ INLINE __m128 broadcast_max(__m128 x) {
 INLINE __m128 broadcast_min(__m128 x) {
     return broadcast_reduce<decltype(_mm_min_ps)>(x, _mm_min_ps);
 }
+#endif
+#ifdef __AVX__
 template<typename Func>
 INLINE __m256 broadcast_reduce(__m256 x, const Func &func) {
     const __m256 permHalves = _mm256_permute2f128_ps(x, x, 1);
@@ -72,6 +75,7 @@ INLINE __m256d broadcast_max(__m256d x) {
 INLINE __m256d broadcast_min(__m256d x) {
     return broadcast_reduce<decltype(_mm256_min_pd)>(x, _mm256_min_pd);
 }
+#endif // #ifndef __AVX__
 #ifdef __AVX512F__
 INLINE __m512 load(const float *ptr, std::false_type) {
     return _mm512_loadu_ps(ptr);
