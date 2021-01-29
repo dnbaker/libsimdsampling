@@ -893,7 +893,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
     // We have to merge the priority queues
     // This could be parallelized, but let's assume k is small
     reduce_pqs(pqs);
-    DBG_ONLY(std::fprintf(stderr, "lastpq has %zu items (expecting k=%d)\n", pqs.front().size(), k);)
+    VERBOSE_ONLY(std::fprintf(stderr, "lastpq has %zu items (expecting k=%d)\n", pqs.front().size(), k);)
 #endif
     auto &rpq = OMP_ELSE(pqs[0], basepq);
     const size_t be = rpq.size();
