@@ -243,7 +243,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 #if __AVX512DQ__
                     avx512bis_pcg32_random_r(&rng);
 #else
-                    pack_result(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng));
+                    pack_result(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng));
 #endif
 
         const __m512d v2 =
