@@ -139,4 +139,4 @@ libsleef-dyn: sleef/dynbuild
 clean:
 	rm -f libsimdsampling.a simdsampling.o libsimdsampling.so libsimdsampling-st.so libsimdsampling-st.a test test-st simdsampling-st.o \
         libargminmax.so argminmax.o argmintest argmintest-st cargredtest cargredtest-st \
-        ftest ftest-st ktest ktest-st ctest ctest-st libargminmax.a
+        ftest ftest-st ktest ktest-st ctest ctest-st libargminmax.a ftest-approx-st test-approx-st
