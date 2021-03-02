@@ -30,7 +30,7 @@ SLEEFARG=libsleef.a
 all: libsimdsampling.a libsimdsampling.so libsimdsampling-st.so libsimdsampling-st.a \
         test test-st ctest ctest-st ftest ftest-st ktest ktest-st \
      libargminmax.so libargminmax.a \
-     argmintest cargredtest
+     argmintest cargredtest libsimdsampling-approx.so libsimdsampling-approx-st.so
 
 DYNLIBS: libsimdsampling.so libsimdsampling-st.so libargminmax.so
 STATICLIBS: libsimdsampling.a libsimdsampling-st.a libargminmax.a

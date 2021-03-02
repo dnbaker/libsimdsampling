@@ -59,7 +59,9 @@
 #endif
 
 #if !__AVX512DQ__
-#define _mm512_cvtepi64_pd(x) _mm512_sub_pd(_mm512_castsi512_pd(_mm512_or_si512(x, _mm512_castpd_si512(_mm512_set1_pd(0x0010000000000000)))), _mm512_set1_pd(0x0010000000000000))
+#define _mm512_cvtepi64_pd(x) _mm512_fmadd_pd(\
+        _mm512_cvtepu32_pd(_mm512_cvtepi64_epi32(_mm512_srli_epi64(x, 32))),\
+        _mm512_set1_pd(0x100000000LL), _mm512_cvtepu32_pd(_mm512_cvtepi64_epi32(x)))
 #endif
 #define LIBKL_ALOG_PD_MUL 1.539095918623324e-16
 #define LIBKL_ALOG_PD_INC -709.0895657128241
@@ -90,9 +92,6 @@ static inline __attribute__((always_inline)) __m256d _mm256_abs_pd(__m256d a) {
 }
 static inline __attribute__((always_inline)) __m256d _mm256_cvtepi64_pd_manual(const __m256i v)
 // From https://stackoverflow.com/questions/41144668/how-to-efficiently-perform-double-int64-conversions-with-sse-avx/41223013
-/* Optimized full range uint64_t to double conversion          */
-/* This code is essentially identical to Mysticial's solution. */
-/* Emulate _mm256_cvtepu64_pd()                                */
 {
     __m256i magic_i_lo   = _mm256_set1_epi64x(0x4330000000000000);                /* 2^52        encoded as floating-point  */
     __m256i magic_i_hi32 = _mm256_set1_epi64x(0x4530000000000000);                /* 2^84        encoded as floating-point  */
@@ -107,7 +106,6 @@ static inline __attribute__((always_inline)) __m256d _mm256_cvtepi64_pd_manual(c
             return result;                                                        /* With gcc use -O3, then -fno-associative-math is default. Do not use -Ofast, which enables -fassociative-math! */
                                                                                   /* With icc use -fp-model precise                                                                                */
 }
-//#define _mm256_cvtepi64_pd(x) _mm256_sub_pd(_mm256_castsi256_pd(_mm256_or_si256(x, _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)))), _mm256_set1_pd(0x0010000000000000))
 #define  _mm256_cvtepi64_pd(x) _mm256_cvtepi64_pd_manual(x)
 
 static inline  __attribute__((always_inline)) __m256d _mm256_alog_pd(__m256d x) {
@@ -122,7 +120,16 @@ static inline  __attribute__((always_inline)) __m256 _mm256_alog_ps(__m256 x) {
 }
 #endif
 #if __SSE2__
-#define _mm_cvtepi64_pd(x) _mm_sub_pd(_mm_castsi128_pd(_mm_or_si128(x, _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)))), _mm_set1_pd(0x0010000000000000))
+
+static inline __attribute__((always_inline)) __m128d _mm_cvtepi64_pd_manual(__m128i x){
+    __m128i xH = _mm_srli_epi64(x, 32);
+    xH = _mm_or_si128(xH, _mm_castpd_si128(_mm_set1_pd(19342813113834066795298816.)));          //  2^84
+    __m128i xL = _mm_blend_epi16(x, _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)), 0xcc);   //  2^52
+    __m128d f = _mm_sub_pd(_mm_castsi128_pd(xH), _mm_set1_pd(19342813118337666422669312.));     //  2^84 + 2^52
+    return _mm_add_pd(f, _mm_castsi128_pd(xL));
+}
+
+#define _mm_cvtepi64_pd(x) _mm_cvtepi64_pd_manual(x)
 static inline __attribute__((always_inline)) __m128 _mm_abs_ps(__m128 a) {
     return _mm_max_ps(a, -a);
 }
