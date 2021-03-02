@@ -17,12 +17,12 @@
 #include "reservoir.h"
 
 #ifdef USE_APPROX_LOG
-    #define Sleef_logd2_u35 _mm_alog_pd
-    #define Sleef_logd4_u35 _mm256_alog_pd
-    #define Sleef_logd8_u35 _mm512_alog_pd
-    #define Sleef_logf4_u35 _mm_alog_ps
-    #define Sleef_logf8_u35 _mm256_alog_ps
-    #define Sleef_logf16_u35 _mm512_alog_ps
+    #define Sleef_logd2_u35 _mm_ss_alog_pd
+    #define Sleef_logd4_u35 _mm256_ss_alog_pd
+    #define Sleef_logd8_u35 _mm512_ss_alog_pd
+    #define Sleef_logf4_u35 _mm_ss_alog_ps
+    #define Sleef_logf8_u35 _mm256_ss_alog_ps
+    #define Sleef_logf16_u35 _mm512_ss_alog_ps
 #endif
 
 #if SIMD_SAMPLING_HIGH_PRECISION
@@ -59,7 +59,9 @@
 #endif
 
 #if !__AVX512DQ__
-#define _mm512_cvtepi64_pd(x) _mm512_sub_pd(_mm512_castsi512_pd(_mm512_or_si512(x, _mm512_castpd_si512(_mm512_set1_pd(0x0010000000000000)))), _mm512_set1_pd(0x0010000000000000))
+#  ifndef _mm512_cvtepi64_pd
+#    define _mm512_cvtepi64_pd(x) _mm512_sub_pd(_mm512_castsi512_pd(_mm512_or_si512(x, _mm512_castpd_si512(_mm512_set1_pd(0x0010000000000000)))), _mm512_set1_pd(0x0010000000000000))
+#  endif
 #endif
 #define LIBKL_ALOG_PD_MUL 1.539095918623324e-16
 #define LIBKL_ALOG_PD_INC -709.0895657128241
@@ -69,12 +71,12 @@
 
 #if __AVX512F__
 
-static inline  __attribute__((always_inline)) __m512d _mm512_alog_pd(__m512d x) {
+static inline  __attribute__((always_inline)) __m512d _mm512_ss_alog_pd(__m512d x) {
     return _mm512_fmadd_pd(_mm512_cvtepi64_pd(_mm512_castpd_si512(x)),
                            _mm512_set1_pd(LIBKL_ALOG_PD_MUL),
                            _mm512_set1_pd(LIBKL_ALOG_PD_INC));
 }
-static inline  __attribute__((always_inline)) __m512 _mm512_alog_ps(__m512 x) {
+static inline  __attribute__((always_inline)) __m512 _mm512_ss_alog_ps(__m512 x) {
     return _mm512_fmadd_ps(_mm512_cvtepi32_ps(_mm512_castps_si512(x)),
                            _mm512_set1_ps(LIBKL_ALOG_PS_MUL),
                            _mm512_set1_ps(LIBKL_ALOG_PS_INC));
@@ -88,33 +90,37 @@ static inline __attribute__((always_inline)) __m256 _mm256_abs_ps(__m256 a) {
 static inline __attribute__((always_inline)) __m256d _mm256_abs_pd(__m256d a) {
     return _mm256_max_pd(a, -a);
 }
+#ifndef _mm256_cvtepi64_pd
 #define _mm256_cvtepi64_pd(x) _mm256_sub_pd(_mm256_castsi256_pd(_mm256_or_si256(x, _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)))), _mm256_set1_pd(0x0010000000000000))
+#endif
 
-static inline  __attribute__((always_inline)) __m256d _mm256_alog_pd(__m256d x) {
+static inline  __attribute__((always_inline)) __m256d _mm256_ss_alog_pd(__m256d x) {
     return _mm256_fmadd_pd(_mm256_cvtepi64_pd(_mm256_castpd_si256(x)),
                            _mm256_set1_pd(LIBKL_ALOG_PD_MUL),
                            _mm256_set1_pd(LIBKL_ALOG_PD_INC));
 }
-static inline  __attribute__((always_inline)) __m256 _mm256_alog_ps(__m256 x) {
+static inline  __attribute__((always_inline)) __m256 _mm256_ss_alog_ps(__m256 x) {
     return _mm256_fmadd_ps(_mm256_cvtepi32_ps(_mm256_castps_si256(x)),
                            _mm256_set1_ps(LIBKL_ALOG_PS_MUL),
                            _mm256_set1_ps(LIBKL_ALOG_PS_INC));
 }
 #endif
 #if __SSE2__
+#ifndef _mm_cvtepi64_pd
 #define _mm_cvtepi64_pd(x) _mm_sub_pd(_mm_castsi128_pd(_mm_or_si128(x, _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)))), _mm_set1_pd(0x0010000000000000))
+#endif
 static inline __attribute__((always_inline)) __m128 _mm_abs_ps(__m128 a) {
     return _mm_max_ps(a, -a);
 }
 static inline __attribute__((always_inline)) __m128d _mm_abs_pd(__m128d a) {
     return _mm_max_pd(a, -a);
 }
-static inline  __attribute__((always_inline)) __m128d _mm_alog_pd(__m128d x) {
+static inline  __attribute__((always_inline)) __m128d _mm_ss_alog_pd(__m128d x) {
     return _mm_fmadd_pd(_mm_cvtepi64_pd(_mm_castpd_si128(x)),
                            _mm_set1_pd(LIBKL_ALOG_PD_MUL),
                            _mm_set1_pd(LIBKL_ALOG_PD_INC));
 }
-static inline  __attribute__((always_inline)) __m128 _mm_alog_ps(__m128 x) {
+static inline  __attribute__((always_inline)) __m128 _mm_ss_alog_ps(__m128 x) {
     return _mm_fmadd_ps(_mm_cvtepi32_ps(_mm_castps_si128(x)),
                            _mm_set1_ps(LIBKL_ALOG_PS_MUL),
                            _mm_set1_ps(LIBKL_ALOG_PS_INC));
