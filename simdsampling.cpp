@@ -88,7 +88,27 @@ static inline __attribute__((always_inline)) __m256 _mm256_abs_ps(__m256 a) {
 static inline __attribute__((always_inline)) __m256d _mm256_abs_pd(__m256d a) {
     return _mm256_max_pd(a, -a);
 }
-#define _mm256_cvtepi64_pd(x) _mm256_sub_pd(_mm256_castsi256_pd(_mm256_or_si256(x, _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)))), _mm256_set1_pd(0x0010000000000000))
+static inline __attribute__((always_inline)) __m256d _mm256_cvtepi64_pd_manual(const __m256i v)
+// From https://stackoverflow.com/questions/41144668/how-to-efficiently-perform-double-int64-conversions-with-sse-avx/41223013
+/* Optimized full range uint64_t to double conversion          */
+/* This code is essentially identical to Mysticial's solution. */
+/* Emulate _mm256_cvtepu64_pd()                                */
+{
+    __m256i magic_i_lo   = _mm256_set1_epi64x(0x4330000000000000);                /* 2^52        encoded as floating-point  */
+    __m256i magic_i_hi32 = _mm256_set1_epi64x(0x4530000000000000);                /* 2^84        encoded as floating-point  */
+    __m256i magic_i_all  = _mm256_set1_epi64x(0x4530000000100000);                /* 2^84 + 2^52 encoded as floating-point  */
+    __m256d magic_d_all  = _mm256_castsi256_pd(magic_i_all);
+
+    __m256i v_lo         = _mm256_blend_epi32(magic_i_lo, v, 0b01010101);         /* Blend the 32 lowest significant bits of v with magic_int_lo                                                   */
+    __m256i v_hi         = _mm256_srli_epi64(v, 32);                              /* Extract the 32 most significant bits of v                                                                     */
+            v_hi         = _mm256_xor_si256(v_hi, magic_i_hi32);                  /* Blend v_hi with 0x45300000                                                                                    */
+    __m256d v_hi_dbl     = _mm256_sub_pd(_mm256_castsi256_pd(v_hi), magic_d_all); /* Compute in double precision:                                                                                  */
+    __m256d result       = _mm256_add_pd(v_hi_dbl, _mm256_castsi256_pd(v_lo));    /* (v_hi - magic_d_all) + v_lo  Do not assume associativity of floating point addition !!                        */
+            return result;                                                        /* With gcc use -O3, then -fno-associative-math is default. Do not use -Ofast, which enables -fassociative-math! */
+                                                                                  /* With icc use -fp-model precise                                                                                */
+}
+//#define _mm256_cvtepi64_pd(x) _mm256_sub_pd(_mm256_castsi256_pd(_mm256_or_si256(x, _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)))), _mm256_set1_pd(0x0010000000000000))
+#define  _mm256_cvtepi64_pd(x) _mm256_cvtepi64_pd_manual(x)
 
 static inline  __attribute__((always_inline)) __m256d _mm256_alog_pd(__m256d x) {
     return _mm256_fmadd_pd(_mm256_cvtepi64_pd(_mm256_castpd_si256(x)),
@@ -180,7 +200,7 @@ SIMD_SAMPLING_API uint64_t dsimd_sample(const double *weights, size_t n, uint64_
     if(fmt & USE_EXPONENTIAL_SKIPS) {
         int nt = 1;
 #ifdef _OPENMP
-        #pragma omp parallel 
+        #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
@@ -197,7 +217,7 @@ SIMD_SAMPLING_API uint64_t fsimd_sample(const float *weights, size_t n, uint64_t
     if(fmt & USE_EXPONENTIAL_SKIPS) {
         int nt = 1;
 #ifdef _OPENMP
-        #pragma omp parallel 
+        #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
@@ -218,7 +238,7 @@ SIMD_SAMPLING_API int dsimd_sample_k(const double *weights, size_t n, int k, uin
         }
         int nt = 1;
 #ifdef _OPENMP
-        #pragma omp parallel 
+        #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
@@ -247,7 +267,7 @@ SIMD_SAMPLING_API int fsimd_sample_k(const float *weights, size_t n, int k, uint
         }
         int nt = 1;
 #ifdef _OPENMP
-        #pragma omp parallel 
+        #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
@@ -1278,7 +1298,7 @@ namespace reservoir_simd {
 
 }
 
-#if SIMD_SAMPLING_HIGH_PRECISION
+#if SIMD_SAMPLING_HIGH_PRECISION || defined(USE_APPROX_LOG)
 #undef Sleef_logd2_u35
 #undef Sleef_logd4_u35
 #undef Sleef_logd8_u35

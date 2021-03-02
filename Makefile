@@ -44,8 +44,14 @@ run_tests: all
 
 simdsampling.cpp: simdsampling.h
 
+simdsampling-approx-st.o: simdsampling.cpp libsleef-dyn
+	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -DUSE_APPROX_LOG
+
 simdsampling-st.o: simdsampling.cpp libsleef-dyn
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -lsleef
+
+simdsampling-approx.o: simdsampling.cpp libsleef-dyn
+	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp -DUSE_APPROX_LOG
 
 simdsampling.o: simdsampling.cpp libsleef-dyn
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp -lsleef
@@ -65,6 +71,12 @@ argminmax.o: argminmax.cpp
 libargminmax.so: argminmax.o
 	$(CXX) $(CXXFLAGS) -shared -o $@ $< -fopenmp -fPIC
 
+libsimdsampling-approx.so: simdsampling-approx.o argminmax.o
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< argminmax.o -lsleef -fopenmp -fPIC
+
+libsimdsampling-approx-st.so: simdsampling-approx-st.o argminmax.o
+	$(CXX) $(CXXFLAGS) -shared -o $@ $< argminmax.o -fPIC -lsleef -fopenmp
+
 libsimdsampling.so: simdsampling.o argminmax.o
 	$(CXX) $(CXXFLAGS) -shared -o $@ $< argminmax.o -lsleef -fopenmp -fPIC
 
@@ -74,14 +86,23 @@ libsimdsampling-st.so: simdsampling-st.o argminmax.o
 ftest: test.cpp libsimdsampling.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp -DFLOAT_TYPE=float
 
+ftest-approx-st: test.cpp libsimdsampling-approx-st.so
+	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-approx-st $< -o $@ -DFLOAT_TYPE=float -lsleef
+
 ftest-st: test.cpp libsimdsampling-st.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-st $< -o $@ -DFLOAT_TYPE=float
+
+test-approx: test.cpp libsimdsampling-approx.so
+	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp
 
 test: test.cpp libsimdsampling.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp
 
 test-st: test.cpp libsimdsampling-st.so
 	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-st $< -o $@
+
+test-approx-st: test.cpp libsimdsampling-approx-st.so
+	$(CXX) $(CXXFLAGS) -L. -lsimdsampling-approx-st $< -o $@ -lsleef
 
 ctest: ctest.c libsimdsampling.so
 	$(CC) $(CFLAGS) -L. -lsimdsampling $< -o $@ -fopenmp
