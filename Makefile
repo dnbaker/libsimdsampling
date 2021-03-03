@@ -45,13 +45,13 @@ run_tests: all
 simdsampling.cpp: simdsampling.h
 
 simdsampling-approx-st.o: simdsampling.cpp libsleef-dyn
-	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -DUSE_APPROX_LOG
+	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -DSIMD_SAMPLING_USE_APPROX_LOG
 
 simdsampling-st.o: simdsampling.cpp libsleef-dyn
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -lsleef
 
 simdsampling-approx.o: simdsampling.cpp libsleef-dyn
-	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp -DUSE_APPROX_LOG
+	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp -DSIMD_SAMPLING_USE_APPROX_LOG
 
 simdsampling.o: simdsampling.cpp libsleef-dyn
 	$(CXX) $(CXXFLAGS) -c -fPIC $< -o $@ -fopenmp -lsleef

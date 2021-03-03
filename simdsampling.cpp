@@ -16,7 +16,7 @@
 #endif
 #include "reservoir.h"
 
-#ifdef USE_APPROX_LOG
+#ifdef SIMD_SAMPLING_USE_APPROX_LOG
     #define Sleef_logd2_u35 _mm_ss_alog_pd
     #define Sleef_logd4_u35 _mm256_ss_alog_pd
     #define Sleef_logd8_u35 _mm512_ss_alog_pd
@@ -1316,7 +1316,7 @@ namespace reservoir_simd {
 
 }
 
-#if SIMD_SAMPLING_HIGH_PRECISION || defined(USE_APPROX_LOG)
+#if SIMD_SAMPLING_HIGH_PRECISION || defined(SIMD_SAMPLING_USE_APPROX_LOG)
 #undef Sleef_logd2_u35
 #undef Sleef_logd4_u35
 #undef Sleef_logd8_u35
