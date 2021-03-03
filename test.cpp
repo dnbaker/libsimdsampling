@@ -1,4 +1,5 @@
 #include "simdsampling.h"
+#include <chrono>
 #include <random>
 #include "aesctr/wy.h"
 #ifdef _OPENMP
@@ -28,14 +29,20 @@ int main(int argc, char **argv) {
     }
     const int n = 100000;
     FLOAT_TYPE *ptr = new FLOAT_TYPE[n];
-    std::cauchy_distribution<FLOAT_TYPE> cd;
+    std::exponential_distribution<FLOAT_TYPE> cd;
     wy::WyRand<uint64_t> rng(13);
     for(int i = 0; i < n; ++i) {
-        ptr[i] = std::abs(cd(rng));
         if(i % 7 == 0) ptr[i] = 0.;
+        else ptr[i] = cd(rng);
     }
-    auto sel = reservoir_simd::sample(ptr, n, seed);
-    std::fprintf(stderr, "Selected: %u with weight %g\n", int(sel), ptr[sel]);
+    std::vector<uint64_t> vals(5);
+    auto t = std::chrono::high_resolution_clock::now();
+    for(size_t i = 0; i < 5; ++i) {
+        vals[i] = reservoir_simd::sample(ptr, n, seed + i);
+    }
+    auto e = std::chrono::high_resolution_clock::now();
+    std::fprintf(stderr, "Selected: %u with weight %g\n", int(vals[0]), ptr[vals[0]]);
+    std::fprintf(stderr, "time: %gms\n", std::chrono::duration<double, std::milli>(e - t).count());
     delete[] ptr;
     return EXIT_SUCCESS;
 }

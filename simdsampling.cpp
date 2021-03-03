@@ -60,7 +60,9 @@
 
 #if !__AVX512DQ__
 #  ifndef _mm512_cvtepi64_pd
-#    define _mm512_cvtepi64_pd(x) _mm512_sub_pd(_mm512_castsi512_pd(_mm512_or_si512(x, _mm512_castpd_si512(_mm512_set1_pd(0x0010000000000000)))), _mm512_set1_pd(0x0010000000000000))
+#    define _mm512_cvtepi64_pd(x) _mm512_fmadd_pd(\
+        _mm512_cvtepu32_pd(_mm512_cvtepi64_epi32(_mm512_srli_epi64(x, 32))),\
+        _mm512_set1_pd(0x100000000LL), _mm512_cvtepu32_pd(_mm512_cvtepi64_epi32(x)))
 #  endif
 #endif
 #define LIBKL_ALOG_PD_MUL 1.539095918623324e-16
@@ -90,8 +92,27 @@ static inline __attribute__((always_inline)) __m256 _mm256_abs_ps(__m256 a) {
 static inline __attribute__((always_inline)) __m256d _mm256_abs_pd(__m256d a) {
     return _mm256_max_pd(a, -a);
 }
-#ifndef _mm256_cvtepi64_pd
-#define _mm256_cvtepi64_pd(x) _mm256_sub_pd(_mm256_castsi256_pd(_mm256_or_si256(x, _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)))), _mm256_set1_pd(0x0010000000000000))
+#ifndef DEFINED_mm256_cvtepi64_pd_manual
+static inline __attribute__((always_inline)) __m256d _mm256_cvtepi64_pd_manual(const __m256i v)
+// From https://stackoverflow.com/questions/41144668/how-to-efficiently-perform-double-int64-conversions-with-sse-avx/41223013
+{
+    __m256i magic_i_lo   = _mm256_set1_epi64x(0x4330000000000000);                /* 2^52        encoded as floating-point  */
+    __m256i magic_i_hi32 = _mm256_set1_epi64x(0x4530000000000000);                /* 2^84        encoded as floating-point  */
+    __m256i magic_i_all  = _mm256_set1_epi64x(0x4530000000100000);                /* 2^84 + 2^52 encoded as floating-point  */
+    __m256d magic_d_all  = _mm256_castsi256_pd(magic_i_all);
+
+    __m256i v_lo         = _mm256_blend_epi32(magic_i_lo, v, 0b01010101);         /* Blend the 32 lowest significant bits of v with magic_int_lo                                                   */
+    __m256i v_hi         = _mm256_srli_epi64(v, 32);                              /* Extract the 32 most significant bits of v                                                                     */
+            v_hi         = _mm256_xor_si256(v_hi, magic_i_hi32);                  /* Blend v_hi with 0x45300000                                                                                    */
+    __m256d v_hi_dbl     = _mm256_sub_pd(_mm256_castsi256_pd(v_hi), magic_d_all); /* Compute in double precision:                                                                                  */
+    __m256d result       = _mm256_add_pd(v_hi_dbl, _mm256_castsi256_pd(v_lo));    /* (v_hi - magic_d_all) + v_lo  Do not assume associativity of floating point addition !!                        */
+            return result;                                                        /* With gcc use -O3, then -fno-associative-math is default. Do not use -Ofast, which enables -fassociative-math! */
+                                                                                  /* With icc use -fp-model precise                                                                                */
+}
+#define DEFINED_mm256_cvtepi64_pd_manual 1
+#endif
+#ifndef  _mm256_cvtepi64_pd
+#define  _mm256_cvtepi64_pd(x) _mm256_cvtepi64_pd_manual(x)
 #endif
 
 static inline  __attribute__((always_inline)) __m256d _mm256_ss_alog_pd(__m256d x) {
@@ -106,8 +127,19 @@ static inline  __attribute__((always_inline)) __m256 _mm256_ss_alog_ps(__m256 x)
 }
 #endif
 #if __SSE2__
+#ifndef DEFINED_mm_cvtepi64_pd_manual
+static inline __attribute__((always_inline)) __m128d _mm_cvtepi64_pd_manual(__m128i x){
+    __m128i xH = _mm_srli_epi64(x, 32);
+    xH = _mm_or_si128(xH, _mm_castpd_si128(_mm_set1_pd(19342813113834066795298816.)));          //  2^84
+    __m128i xL = _mm_blend_epi16(x, _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)), 0xcc);   //  2^52
+    __m128d f = _mm_sub_pd(_mm_castsi128_pd(xH), _mm_set1_pd(19342813118337666422669312.));     //  2^84 + 2^52
+    return _mm_add_pd(f, _mm_castsi128_pd(xL));
+}
+#define DEFINED_mm_cvtepi64_pd_manual
+#endif
+
 #ifndef _mm_cvtepi64_pd
-#define _mm_cvtepi64_pd(x) _mm_sub_pd(_mm_castsi128_pd(_mm_or_si128(x, _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)))), _mm_set1_pd(0x0010000000000000))
+#define _mm_cvtepi64_pd(x) _mm_cvtepi64_pd_manual(x)
 #endif
 static inline __attribute__((always_inline)) __m128 _mm_abs_ps(__m128 a) {
     return _mm_max_ps(a, -a);
@@ -186,7 +218,7 @@ SIMD_SAMPLING_API uint64_t dsimd_sample(const double *weights, size_t n, uint64_
     if(fmt & USE_EXPONENTIAL_SKIPS) {
         int nt = 1;
 #ifdef _OPENMP
-        #pragma omp parallel 
+        #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
@@ -203,7 +235,7 @@ SIMD_SAMPLING_API uint64_t fsimd_sample(const float *weights, size_t n, uint64_t
     if(fmt & USE_EXPONENTIAL_SKIPS) {
         int nt = 1;
 #ifdef _OPENMP
-        #pragma omp parallel 
+        #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
@@ -224,7 +256,7 @@ SIMD_SAMPLING_API int dsimd_sample_k(const double *weights, size_t n, int k, uin
         }
         int nt = 1;
 #ifdef _OPENMP
-        #pragma omp parallel 
+        #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
@@ -253,7 +285,7 @@ SIMD_SAMPLING_API int fsimd_sample_k(const float *weights, size_t n, int k, uint
         }
         int nt = 1;
 #ifdef _OPENMP
-        #pragma omp parallel 
+        #pragma omp parallel
         {
             nt = omp_get_num_threads();
         }
@@ -333,7 +365,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 #if __AVX512DQ__
                     avx512bis_pcg32_random_r(&rng);
 #else
-                    pack_result(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng));
+                    pack_result(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng),avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng));
 #endif
 
         const __m512d v2 =
@@ -1284,7 +1316,7 @@ namespace reservoir_simd {
 
 }
 
-#if SIMD_SAMPLING_HIGH_PRECISION
+#if SIMD_SAMPLING_HIGH_PRECISION || defined(USE_APPROX_LOG)
 #undef Sleef_logd2_u35
 #undef Sleef_logd4_u35
 #undef Sleef_logd8_u35
