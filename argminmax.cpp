@@ -428,9 +428,8 @@ template<LoadFormat aln, ArgReduction AR, bool MT>
 SIMD_SAMPLING_API uint64_t double_argsel_fmt(const double *weights, size_t n)
 {
     uint64_t bestind = 0;
-    static constexpr bool IS_MAX = AR == ARGMAX;
-    static constexpr double STARTVAL = IS_MAX ? -std::numeric_limits<double>::max(): std::numeric_limits<double>::max();
 #ifdef __AVX512F__
+    static constexpr double STARTVAL = (AR == ARGMAX) ? -std::numeric_limits<double>::max(): std::numeric_limits<double>::max();
     constexpr size_t nperel = sizeof(__m512d) / sizeof(double);
     const size_t e = n / nperel;
     __m512d vmaxv = _mm512_set1_pd(STARTVAL);
@@ -470,6 +469,7 @@ SIMD_SAMPLING_API uint64_t double_argsel_fmt(const double *weights, size_t n)
         }
     }
 #elif __AVX2__
+    static constexpr double STARTVAL = (AR == ARGMAX) ? -std::numeric_limits<double>::max(): std::numeric_limits<double>::max();
     constexpr size_t nperel = sizeof(__m256d) / sizeof(double);
     const size_t e = (n / nperel);
     __m256d vmaxv = _mm256_set1_pd(STARTVAL);
@@ -508,6 +508,7 @@ SIMD_SAMPLING_API uint64_t double_argsel_fmt(const double *weights, size_t n)
         if(Cmp<AR>::cmp(weights[p], maxv)) maxv = weights[p], bestind = p;
     }
 #else
+    static constexpr double STARTVAL = (AR == ARGMAX) ? -std::numeric_limits<double>::max(): std::numeric_limits<double>::max();
     double bestv = STARTVAL;
     if(MT) {
         OMP_PFOR
@@ -535,9 +536,8 @@ template<LoadFormat aln, ArgReduction AR, bool MT>
 SIMD_SAMPLING_API uint64_t float_argsel_fmt(const float * weights, size_t n)
 {
     uint64_t bestind = 0;
-    static constexpr bool IS_MAX = AR == ARGMAX;
-    static constexpr float STARTVAL = IS_MAX ? -std::numeric_limits<float>::max(): std::numeric_limits<float>::max();
 #ifdef __AVX512F__
+    static constexpr float STARTVAL = (AR == ARGMAX) ? -std::numeric_limits<float>::max(): std::numeric_limits<float>::max();
     constexpr size_t nperel = sizeof(__m512) / sizeof(float);
     const size_t e = n / nperel;
     __m512 vmaxv = _mm512_set1_ps(STARTVAL);
@@ -577,6 +577,7 @@ SIMD_SAMPLING_API uint64_t float_argsel_fmt(const float * weights, size_t n)
             bestind = p, maxv = v;
     }
 #elif __AVX2__
+    static constexpr float STARTVAL = (AR == ARGMAX) ? -std::numeric_limits<float>::max(): std::numeric_limits<float>::max();
     constexpr size_t nperel = sizeof(__m256) / sizeof(float);
     const size_t e = (n / nperel);
     __m256 vmaxv = _mm256_set1_ps(STARTVAL);
@@ -694,9 +695,8 @@ ptrdiff_t float_argsel_k_fmt(const float * weights, size_t n, ptrdiff_t k, uint6
     } else {
         pqs.emplace_back(k);
     }
-    static constexpr bool IS_MAX = AR == ARGMAX;
-    static constexpr float STARTVAL = IS_MAX ? -std::numeric_limits<float>::max(): std::numeric_limits<float>::max();
 #ifdef __AVX512F__
+    static constexpr float STARTVAL = (AR == ARGMAX) ? -std::numeric_limits<float>::max(): std::numeric_limits<float>::max();
     constexpr size_t nperel = sizeof(__m512) / sizeof(float);
     const size_t e = n / nperel;
     __m512 *vmaxvs;
@@ -771,6 +771,7 @@ ptrdiff_t float_argsel_k_fmt(const float * weights, size_t n, ptrdiff_t k, uint6
     }
     std::free(vmaxvs);
 #elif __AVX2__
+    static constexpr float STARTVAL = (AR == ARGMAX) ? -std::numeric_limits<float>::max(): std::numeric_limits<float>::max();
     constexpr size_t nperel = sizeof(__m256) / sizeof(float);
     const size_t e = (n / nperel);
     __m256 *vmaxvs;
@@ -844,7 +845,7 @@ ptrdiff_t float_argsel_k_fmt(const float * weights, size_t n, ptrdiff_t k, uint6
         auto &pr = pqs[0];
         #pragma GCC unroll 4
         for(size_t i = 0; i < n; ++i) {
-            if(pr.size() < k || Cmp<AR>::cmp(weights[i], pr.top().first))
+            if(pr.size() < static_cast<size_t>(k) || Cmp<AR>::cmp(weights[i], pr.top().first))
                 pr.add(weights[i], i);
         }
     }
@@ -887,9 +888,8 @@ double_argsel_k_fmt(const double * weights, size_t n, ptrdiff_t k, uint64_t *ret
     } else {
         pqs.emplace_back(k);
     }
-    static constexpr bool IS_MAX = AR == ARGMAX;
-    static constexpr double STARTVAL = IS_MAX ? -std::numeric_limits<double>::max(): std::numeric_limits<double>::max();
 #ifdef __AVX512F__
+    static constexpr double STARTVAL = (AR == ARGMAX) ? -std::numeric_limits<double>::max(): std::numeric_limits<double>::max();
     constexpr size_t nperel = sizeof(__m512) / sizeof(double);
     const size_t e = n / nperel;
     __m512d *vmaxvs;
@@ -948,6 +948,7 @@ double_argsel_k_fmt(const double * weights, size_t n, ptrdiff_t k, uint64_t *ret
     }
     std::free(vmaxvs);
 #elif __AVX2__
+    static constexpr double STARTVAL = (AR == ARGMAX) ? -std::numeric_limits<double>::max(): std::numeric_limits<double>::max();
     constexpr size_t nperel = sizeof(__m256) / sizeof(double);
     const size_t e = (n / nperel);
     __m256d *vmaxvs;

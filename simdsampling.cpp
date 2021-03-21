@@ -46,6 +46,13 @@
 #  endif
 #endif
 
+#if __cplusplus < 201703L
+#define LSS_FLOAT_PSMUL static_cast<float>(1. / (1ull << 29))
+#define LSS_DOUBLE_PDMUL (1. / (1ull << 52))
+#else
+#define LSS_FLOAT_PSMUL  0x1p-29f
+#define LSS_DOUBLE_PDMUL 0x1p-52
+#endif
 
 #ifndef __FMA__
 #ifdef __AVX2__
@@ -354,7 +361,6 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
     }
     constexpr size_t nperel = sizeof(__m512d) / sizeof(double);
     const size_t e = n / nperel;
-    constexpr double pdmul = 1. / (1ull<<52);
     __m512d vmaxv = _mm512_set1_pd(-std::numeric_limits<double>::max());
 
     OMP_PFOR
@@ -370,14 +376,14 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 
         const __m512d v2 =
 #ifdef __AVX512DQ__
-            _mm512_mul_pd(_mm512_cvtepi64_pd(_mm512_srli_epi64(v, 12)), _mm512_set1_pd(pdmul));
+            _mm512_mul_pd(_mm512_cvtepi64_pd(_mm512_srli_epi64(v, 12)), _mm512_set1_pd(LSS_DOUBLE_PDMUL));
 #else
-            _mm512_mul_pd(_mm512_sub_pd(_mm512_castsi512_pd(_mm512_or_si512(_mm512_srli_epi64(v, 12), _mm512_castpd_si512(_mm512_set1_pd(0x0010000000000000)))), _mm512_set1_pd(0x0010000000000000)),  _mm512_set1_pd(pdmul));
+            _mm512_mul_pd(_mm512_sub_pd(_mm512_castsi512_pd(_mm512_or_si512(_mm512_srli_epi64(v, 12), _mm512_castpd_si512(_mm512_set1_pd(0x0010000000000000)))), _mm512_set1_pd(0x0010000000000000)),  _mm512_set1_pd(LSS_DOUBLE_PDMUL));
 #endif
         // Shift right by 12, convert from ints to doubles, and then multiply by 2^-52
         // resulting in uniform [0, 1] sampling
 
-        const __m512d v3 = Sleef_logd8_u35(v2);
+        const __m512d v3 = _mm512_ss_alog_pd(v2);
         // Log-transform the [0, 1] sampling
         __m512d ov = load<aln>((const double *)&weights[o * nperel]);
         auto divv = _mm512_div_pd(v3, ov);
@@ -406,7 +412,6 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 #elif __AVX2__
     constexpr size_t nperel = sizeof(__m256d) / sizeof(double);
     const size_t e = (n / nperel);
-    constexpr double pdmul = 1. / (1ull << 52);
     __m256d vmaxv = _mm256_set1_pd(-std::numeric_limits<double>::max());
     using simdpcg_t = avx256_pcg32_random_t;
     auto init = [&](simdpcg_t &x) {
@@ -434,8 +439,8 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         __m256i v = _mm256_set_m128i(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng));
         auto v2 = _mm256_or_si256(_mm256_srli_epi64(v, 12), _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)));
         auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
-        auto v4 = _mm256_mul_pd(v3, _mm256_set1_pd(pdmul));
-        auto v5 = Sleef_logd4_u35(v4);
+        auto v4 = _mm256_mul_pd(v3, _mm256_set1_pd(LSS_DOUBLE_PDMUL));
+        __m256d v5 = _mm256_ss_alog_pd(v4);
         __m256d ov = load<aln>((const double *)&weights[o * nperel]);
         auto divv = _mm256_div_pd(v5, ov);
         auto cmp = _mm256_cmp_pd(divv, vmaxv, _CMP_GT_OQ);
@@ -465,7 +470,7 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 #elif __SSE2__
     constexpr size_t nperel = sizeof(__m128d) / sizeof(double);
     const size_t e = n / nperel;
-    constexpr double pdmul = 1. / (1ull<<52);
+    constexpr double LSS_DOUBLE_PDMUL = 1. / (1ull<<52);
     double maxv = -std::numeric_limits<double>::max();
 #ifdef __AVX__
     __m128d vmaxv = _mm_set1_pd(maxv);
@@ -480,8 +485,8 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
         __m128i v = _mm_set_epi64x(rng(), rng());
         auto v2 = _mm_or_si128(_mm_srli_epi64(v, 12), _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)));
         auto v3 = _mm_sub_pd(_mm_castsi128_pd(v2), _mm_set1_pd(0x0010000000000000));
-        auto v4 = _mm_mul_pd(v3, _mm_set1_pd(pdmul));
-        auto v5 = Sleef_logd2_u35(v4);
+        auto v4 = _mm_mul_pd(v3, _mm_set1_pd(LSS_DOUBLE_PDMUL));
+        auto v5 = _mm_ss_alog_pd(v4);
         __m128d ov6 = load<aln>((const double *) &weights[o * nperel]);
         auto divv = _mm_div_pd(v5, ov6);
         int cmpmask;
@@ -543,7 +548,6 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
     std::vector<wy::WyRand<uint64_t>> rngs(nt);
     for(auto &i: rngs) i.seed(baserng());
 #endif
-    constexpr float psmul = 1. / (1ull<<29);
 #ifdef __AVX512F__
     #if __AVX512DQ__
     using simdpcg_t = avx512_pcg32_random_t;
@@ -593,10 +597,10 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
 #else
         _mm512_srli_epi32(pack_result(avx256_pcg32_random_r(rngptr), avx256_pcg32_random_r(rngptr),avx256_pcg32_random_r(rngptr),avx256_pcg32_random_r(rngptr)), 3);
 #endif
-        auto v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
-        auto v5 = Sleef_logf16_u35(v4);
+        auto v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(LSS_FLOAT_PSMUL));
+        __m512 v5 = _mm512_ss_alog_ps(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
-        auto divv = _mm512_div_ps(v5, lv);
+        __m512 divv = _mm512_div_ps(v5, lv);
         auto cmpmask = _mm512_cmp_ps_mask(divv, vmaxv, _CMP_GT_OQ);
         if(cmpmask) {
             auto newmaxv = _mm512_set1_ps(_mm512_reduce_max_ps(divv));
@@ -646,7 +650,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         auto &rng = OMP_ELSE(rngstates[omp_get_thread_num()],
                              baserngstate);
         __m256i v = _mm256_srli_epi32(avx2_pcg32_random_r(&rng), 3);
-        auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
+        auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(LSS_FLOAT_PSMUL));
 #ifndef NDEBUG
         float sum = 0.;
         for(size_t i = 0; i < sizeof(v) / sizeof(uint32_t); ++i) {
@@ -655,7 +659,7 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
             sum += nextv;
         }
 #endif
-        auto v3 = Sleef_logf8_u35(v2);
+        auto v3 = _mm256_ss_alog_ps(v2);
         __m256 ov6 = load<aln>((const float *) &weights[o * nperel]);
         auto divv = _mm256_div_ps(v3, ov6);
         auto cmp = _mm256_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
@@ -692,8 +696,8 @@ uint64_t float_simd_sampling_fmt(const float * weights, size_t n, uint64_t seed)
         auto &rng = OMP_ELSE(rngs[omp_get_thread_num()],
                              baserng);
         __m128i v = _mm_set_epi64x(rng(), rng());
-        auto v3 = _mm_mul_ps(_mm_cvtepi32_ps(v), _mm_set1_ps(psmul));
-        auto v5 = Sleef_logf4_u35(v3);
+        auto v3 = _mm_mul_ps(_mm_cvtepi32_ps(v), _mm_set1_ps(LSS_FLOAT_PSMUL));
+        auto v5 = _mm_ss_alog_ps(v3);
         __m128 ov6 = load<aln>((const float *) &weights[o * nperel]);
         auto divv = _mm_div_ps(v5, ov6);
         auto cmp = _mm_cmp_ps(divv, vmaxv, _CMP_GT_OQ);
@@ -817,9 +821,6 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
     pq_t<double> basepq(k);
 #endif
 
-#if defined(__AVX512F__) || defined(__AVX2__)
-    static constexpr double pdmul = 1. / (1ull<<52);
-#endif
 #ifdef __AVX512F__
     #if __AVX512DQ__
     using simdpcg_t = avx512bis_pcg32_random_t;
@@ -876,9 +877,9 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
 
         const __m512d v2 =
 #ifdef __AVX512DQ__
-            _mm512_mul_pd(_mm512_cvtepi64_pd(_mm512_srli_epi64(v, 12)), _mm512_set1_pd(pdmul));
+            _mm512_mul_pd(_mm512_cvtepi64_pd(_mm512_srli_epi64(v, 12)), _mm512_set1_pd(LSS_DOUBLE_PDMUL));
 #else
-            _mm512_mul_pd(_mm512_sub_pd(_mm512_castsi512_pd(_mm512_or_si512(_mm512_srli_epi64(v, 12), _mm512_castpd_si512(_mm512_set1_pd(0x0010000000000000)))), _mm512_set1_pd(0x0010000000000000)),  _mm512_set1_pd(pdmul));
+            _mm512_mul_pd(_mm512_sub_pd(_mm512_castsi512_pd(_mm512_or_si512(_mm512_srli_epi64(v, 12), _mm512_castpd_si512(_mm512_set1_pd(0x0010000000000000)))), _mm512_set1_pd(0x0010000000000000)),  _mm512_set1_pd(LSS_DOUBLE_PDMUL));
 #endif
         // Shift right by 12, convert from ints to doubles, and then multiply by 2^-52
         // resulting in uniform [0, 1] sampling
@@ -943,7 +944,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         __m256i v = _mm256_set_m128i(avx256_pcg32_random_r(&rng), avx256_pcg32_random_r(&rng));
         auto v2 = _mm256_or_si256(_mm256_srli_epi64(v, 12), _mm256_castpd_si256(_mm256_set1_pd(0x0010000000000000)));
         auto v3 = _mm256_sub_pd(_mm256_castsi256_pd(v2), _mm256_set1_pd(0x0010000000000000));
-        auto v5 = Sleef_logd4_u35(_mm256_mul_pd(v3, _mm256_set1_pd(pdmul)));
+        auto v5 = Sleef_logd4_u35(_mm256_mul_pd(v3, _mm256_set1_pd(LSS_DOUBLE_PDMUL)));
         auto divv = _mm256_xor_pd(_mm256_div_pd(v5, load<aln>((const double *)&weights[onp])), _mm256_set1_pd(-0.0));
         int cmpmask;
         if(pq.size() < pq.k_ || (cmpmask = _mm256_movemask_pd(_mm256_cmp_pd(divv, vmaxv, CMPGQINT))) == 0xFu) {
@@ -968,7 +969,6 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
     const size_t e = n / nperel;
     double maxv = -std::numeric_limits<double>::max();
     __m128d vmaxv = _mm_set1_pd(maxv);
-    constexpr double pdmul = 1. / (1ull<<52);
     OMP_PFOR
     for(size_t o = 0; o < e; ++o) {
         OMP_ONLY(const int tid = omp_get_thread_num();)
@@ -980,7 +980,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
         __m128i v = _mm_set_epi64x(rng(), rng());
         auto v2 = _mm_or_si128(_mm_srli_epi64(v, 12), _mm_castpd_si128(_mm_set1_pd(0x0010000000000000)));
         auto v3 = _mm_sub_pd(_mm_castsi128_pd(v2), _mm_set1_pd(0x0010000000000000));
-        auto v4 = _mm_mul_pd(v3, _mm_set1_pd(pdmul));
+        auto v4 = _mm_mul_pd(v3, _mm_set1_pd(LSS_DOUBLE_PDMUL));
         auto v5 = Sleef_logd2_u35(v4);
         auto divv = _mm_xor_pd(_mm_div_pd(v5, load<aln>((const double *) &weights[onp])), _mm_set1_pd(-0.0));
         int cmpmask;
@@ -1081,11 +1081,6 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
 #else
     pq_t<float> basepq(k);
 #endif
-#if __cplusplus >= 201703L
-    static constexpr float psmul = 0x1p-29;
-#else
-    static constexpr float psmul = 1. / (1<<29);
-#endif
 
 #ifdef __AVX512F__
     #if __AVX512DQ__
@@ -1137,7 +1132,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
 #else
                     _mm512_srli_epi32(pack_result(avx2_pcg32_random_r(rngptr), avx2_pcg32_random_r(rngptr)), 3);
 #endif
-        __m512 v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(psmul));
+        __m512 v4 = _mm512_mul_ps(_mm512_cvtepi32_ps(v), _mm512_set1_ps(LSS_FLOAT_PSMUL));
         __m512 v5 = Sleef_logf16_u35(v4);
         __m512 lv = load<aln>((const float *)&weights[o * nperel]);
         auto divv = _mm512_div_ps(v5, lv);
@@ -1219,7 +1214,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
 #else
         __m256i v = _mm256_srli_epi32(avx2_pcg32_random_r(rngptr), 3);
 #endif
-        auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(psmul));
+        auto v2 = _mm256_mul_ps(_mm256_cvtepi32_ps(v), _mm256_set1_ps(LSS_FLOAT_PSMUL));
         const __m256 divv = -_mm256_div_ps(Sleef_logf8_u35(v2), load<aln>((const float *) &weights[o * nperel]));
         int cmpmask, ind;
         if(pq.size() < pq.k_ || (cmpmask = _mm256_movemask_ps(_mm256_cmp_ps(divv, vmaxv, CMPGQINT))) == 0xFF) {
@@ -1254,7 +1249,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
         auto &rng = OMP_ELSE(rngs[tid], baserng);
         auto &pq = OMP_ELSE(pqs[tid], basepq);
         if(weights[i] > 0.)
-            pq.add(-std::log((psmul * rng()) / weights[i]), i);
+            pq.add(-std::log((LSS_FLOAT_PSMUL * rng()) / weights[i]), i);
     }
 #endif
 #ifdef _OPENMP
