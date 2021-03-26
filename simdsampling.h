@@ -71,7 +71,7 @@ template<> inline uint64_t sample<float>(const float *weights, size_t n, uint64_
 
 template<typename Container, typename=typename std::enable_if<!std::is_pointer<Container>::value>::type>
 static INLINE uint64_t sample(const Container &x, uint64_t seed=0, enum SampleFmt fmt=NEITHER) {
-    return sample(x.data(), x.size(), seed);
+    return sample(x.data(), x.size(), seed, fmt);
 }
 
 // Sample k
