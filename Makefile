@@ -131,11 +131,13 @@ sleef/dynbuild: sleef
 sleef/build: sleef
 	ls sleef/build 2>/dev/null || mkdir sleef/build
 
-libsleef.a: sleef/build
-	ls libsleef.a 2>/dev/null || ((ls ../libsleef.a && cp ../libsleef.a .) || cd $< && $(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE) &&  cp lib/libsleef.a lib/libsleefdft.a ../..)
+sleef/build/lib/libsleef.a: sleef/build
+	cd $< && ($(MAKE) || ($(CMAKE) .. -DBUILD_SHARED_LIBS=0 && $(MAKE)))
+libsleef.a: sleef/build/lib/libsleef.a
+	cp $< $@
 
 libsleef-dyn: sleef/dynbuild
-	ls libsleef*so 2>/dev/null || ls libsleef*dylib 2>/dev/null || (cd sleef/dynbuild && echo "about to cmake " &&  $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && (cp lib/libsleef*dylib ../.. 2>/dev/null || cp lib/libsleef*so ../.. 2>/dev/null))
+	cd $< && echo "about to cmake " && rm -f CMakeCache.txt && $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && (cp lib/libsleef*dylib ../.. 2>/dev/null || cp lib/libsleef*so ../.. 2>/dev/null)
 clean:
 	rm -f libsimdsampling.a simdsampling.o libsimdsampling.so libsimdsampling-st.so libsimdsampling-st.a test test-st simdsampling-st.o \
         libargminmax.so argminmax.o argmintest argmintest-st cargredtest cargredtest-st \
