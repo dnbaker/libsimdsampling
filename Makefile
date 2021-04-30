@@ -136,8 +136,9 @@ sleef/build/lib/libsleef.a: sleef/build
 libsleef.a: sleef/build/lib/libsleef.a
 	cp $< $@
 
-libsleef-dyn: sleef/dynbuild
-	cd $< && echo "about to cmake " && rm -f CMakeCache.txt && $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && $(MAKE) && (cp lib/libsleef*dylib ../.. 2>/dev/null || cp lib/libsleef*so ../.. 2>/dev/null)
+libsleef-dyn: libsleef.so
+libsleef.so: sleef/dynbuild
+	cd $< && echo "about to cmake " && rm -f CMakeCache.txt && $(CMAKE) .. -DBUILD_SHARED_LIBS=1 && ($(MAKE) || echo "Sleef testing failed, but compilation of libraries may have succeeded.") && (cp lib/libsleef*dylib ../.. 2>/dev/null || cp lib/libsleef*so ../.. 2>/dev/null) && (ls ../../libsleef.so 2>/dev/null || ln ../../libsleef.dylib ../../libsleef.so)
 clean:
 	rm -f libsimdsampling.a simdsampling.o libsimdsampling.so libsimdsampling-st.so libsimdsampling-st.a test test-st simdsampling-st.o \
         libargminmax.so argminmax.o argmintest argmintest-st cargredtest cargredtest-st \
