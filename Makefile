@@ -124,7 +124,7 @@ cargredtest: argmintest.cpp libargminmax.so
 
 
 sleef:
-	ls sleef 2>/dev/null || git clone https://github.com/shibatch/sleef
+	(ls sleef 2>/dev/null || git clone https://github.com/shibatch/sleef) && cd sleef && git checkout 84474d8
 
 sleef/dynbuild: sleef
 	ls sleef/dynbuild 2>/dev/null || mkdir sleef/dynbuild
