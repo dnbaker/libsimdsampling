@@ -470,7 +470,6 @@ uint64_t double_simd_sampling_fmt(const double *weights, size_t n, uint64_t seed
 #elif __SSE2__
     constexpr size_t nperel = sizeof(__m128d) / sizeof(double);
     const size_t e = n / nperel;
-    constexpr double LSS_DOUBLE_PDMUL = 1. / (1ull<<52);
     double maxv = -std::numeric_limits<double>::max();
 #ifdef __AVX__
     __m128d vmaxv = _mm_set1_pd(maxv);
