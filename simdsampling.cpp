@@ -1,6 +1,7 @@
 #ifdef _OPENMP
 #include "omp.h"
 #endif
+#include "sleef.h"
 #include "x86intrin.h"
 #include "ctz.h"
 #include "simdsampling.h"
