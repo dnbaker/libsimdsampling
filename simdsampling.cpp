@@ -851,7 +851,7 @@ struct pq_t: public std::priority_queue<std::pair<FT, uint64_t>, std::vector<std
     }
     INLINE void add(FT val, uint64_t id) {add(std::pair<FT, uint64_t>(val, id));}
     void add(const pq_t<FT> &o) {
-        for(const auto item: o.getc()) add(item);
+        for(const auto &item: o.getc()) add(item);
     }
 };
 
@@ -977,6 +977,7 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
                 pq.add(divv[i], i + o * nperel);
         } else if(cmpmask) {
             switch(__builtin_popcount(cmpmask)) {
+                case 8: {auto ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH
                 case 7: {auto ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH
                 case 6: {auto ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH
                 case 5: {auto ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH
@@ -1033,9 +1034,11 @@ SIMD_SAMPLING_API int double_simd_sample_k_fmt(const double *weights, size_t n, 
             pq.add(divv[0], onp); pq.add(divv[1], onp + 1); pq.add(divv[2], onp + 2); pq.add(divv[3], onp + 3);
         } else if(cmpmask) {
             switch(__builtin_popcount(cmpmask)) {
+                case 4: {int ind = ctz(cmpmask); pq.add(divv[ind], ind + onp); cmpmask ^= (1 << ind);}FALLTHROUGH
                 case 3: {int ind = ctz(cmpmask); pq.add(divv[ind], ind + onp); cmpmask ^= (1 << ind);}FALLTHROUGH
                 case 2: {int ind = ctz(cmpmask); pq.add(divv[ind], ind + onp); cmpmask ^= (1 << ind);}FALLTHROUGH
                 case 1: {int ind = ctz(cmpmask); pq.add(divv[ind], ind + onp);}
+                default: ;
             }
         } else continue;
         vmaxv = _mm256_set1_pd(pq.top().first);
@@ -1226,6 +1229,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
         } else if(cmpmask) {
             int ind;
             switch(__builtin_popcount(cmpmask)) {
+                case 16: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
                 case 15: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
                 case 14: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
                 case 13: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
@@ -1241,6 +1245,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
                 case 3: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
                 case 2: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
                 case 1: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel);}
+                default: ;
             }
         } else continue;
         vmaxv = _mm512_set1_ps(pq.top().first);
@@ -1306,6 +1311,7 @@ SIMD_SAMPLING_API int float_simd_sample_k_fmt(const float *weights, size_t n, in
             pq.add(divv[6], 6 + o * nperel); pq.add(divv[7], 7 + o * nperel);
         } else if(cmpmask) {
             switch(__builtin_popcount(cmpmask)) {
+                case 8: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
                 case 7: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
                 case 6: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;
                 case 5: {ind = ctz(cmpmask); pq.add(divv[ind], ind + o * nperel); cmpmask ^= (1 << ind);}FALLTHROUGH;

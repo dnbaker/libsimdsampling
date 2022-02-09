@@ -96,7 +96,7 @@ T __roundup(T n) {
 template<typename Q>
 void queue_reduce_pair(Q &destchunk, Q &srcchunk) {
     if(srcchunk.size() > destchunk.size()) std::swap(destchunk, srcchunk);
-    for(const auto v: srcchunk.getc()) {
+    for(const auto &v: srcchunk.getc()) {
         destchunk.push(v);
         destchunk.pop();
     }
